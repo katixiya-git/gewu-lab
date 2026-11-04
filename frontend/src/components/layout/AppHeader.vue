@@ -8,7 +8,7 @@ import { clearAuth, getAuth } from '@/utils/auth'
 const props = defineProps({
   nav: { type: Array, default: () => [] },
   home: { type: String, default: '/chat' },
-  userName: { type: String, default: '学生账号' },
+  userName: { type: String, default: '访客' },
   roleText: { type: String, default: '学生' },
   toggleable: { type: Boolean, default: false },
   collapsed: { type: Boolean, default: false }

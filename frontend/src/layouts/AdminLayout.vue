@@ -9,13 +9,7 @@ const collapsed = ref(false)
 <template>
   <el-container class="admin-layout">
     <el-header class="admin-layout__header" height="56px">
-      <AppHeader
-        v-model:collapsed="collapsed"
-        toggleable
-        home="/admin/reviews"
-        user-name="陈管理员"
-        role-text="管理员"
-      />
+      <AppHeader v-model:collapsed="collapsed" toggleable home="/admin/reviews" />
     </el-header>
 
     <el-container class="admin-layout__body">

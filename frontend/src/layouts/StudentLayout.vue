@@ -6,7 +6,7 @@ import { studentNav } from '@/config/menu'
 <template>
   <div class="student-layout">
     <header class="student-layout__header">
-      <AppHeader :nav="studentNav" home="/chat" user-name="张同学" role-text="学生" />
+      <AppHeader :nav="studentNav" home="/chat" />
     </header>
 
     <main class="student-layout__main">

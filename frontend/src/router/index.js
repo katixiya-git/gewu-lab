@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import StudentLayout from '@/layouts/StudentLayout.vue'
+import { getAuth } from '@/utils/auth'
 import AdminLayout from '@/layouts/AdminLayout.vue'
 
 const router = createRouter({
@@ -80,6 +81,27 @@ const router = createRouter({
       meta: { title: '页面不存在' }
     }
   ]
+})
+
+router.beforeEach((to) => {
+  const auth = getAuth()
+
+  // 已登录时访问登录页，直接回到对应首页
+  if (to.path === '/login') {
+    if (auth) return auth.role === 'admin' ? '/admin/reviews' : '/chat'
+    return true
+  }
+
+  // 未登录一律回登录页，并记住原目标
+  if (!auth) {
+    return { path: '/login', query: { redirect: to.fullPath } }
+  }
+
+  // 角色与路由不匹配时纠正到各自首页
+  const isAdminRoute = to.path.startsWith('/admin')
+  if (auth.role === 'admin' && !isAdminRoute) return '/admin/reviews'
+  if (auth.role !== 'admin' && isAdminRoute) return '/chat'
+  return true
 })
 
 router.afterEach((to) => {

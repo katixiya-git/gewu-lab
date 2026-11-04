@@ -1,11 +1,12 @@
 <script setup>
 import { onMounted, reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ChatLineRound, Calendar, OfficeBuilding, Lock, User } from '@element-plus/icons-vue'
 import { setAuth, getRememberedUsername, setRememberedUsername } from '@/utils/auth'
 
 const router = useRouter()
+const route = useRoute()
 
 const DEMO = {
   student: { username: 'student', password: '123456', name: '张同学' },
@@ -59,7 +60,8 @@ function submit() {
       setRememberedUsername(remember.value ? form.username : '')
       loading.value = false
       ElMessage.success(`欢迎回来，${name}`)
-      router.push(role.value === 'admin' ? '/admin/reviews' : '/chat')
+      const fallback = role.value === 'admin' ? '/admin/reviews' : '/chat'
+      router.push(route.query.redirect || fallback)
     }, 420)
   })
 }
