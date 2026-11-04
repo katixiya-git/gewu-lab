@@ -1,10 +1,12 @@
 <script setup>
 import { computed, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { bookings } from '@/mock/data'
 import { statusTagType, statusText } from '@/utils/status'
 
-const activeTab = ref('pending')
+const route = useRoute()
+const activeTab = ref(route.query.tab === 'conflict' ? 'conflict' : 'pending')
 
 const tabs = [
   { name: 'pending', label: '待审核' },
@@ -51,17 +53,25 @@ async function reject(row) {
       </el-tabs>
 
       <el-table :data="filtered" stripe>
-        <el-table-column prop="id" label="预约号" width="170" />
+        <el-table-column prop="id" label="预约号" width="158" />
         <el-table-column prop="labName" label="实验室" min-width="130" />
-        <el-table-column label="时间" min-width="170">
+        <el-table-column label="时间" min-width="196">
           <template #default="{ row }">{{ row.date }} {{ row.start }}-{{ row.end }}</template>
         </el-table-column>
         <el-table-column label="人数 / 类型" width="110">
           <template #default="{ row }">{{ row.people }} 人 · {{ row.type }}</template>
         </el-table-column>
         <el-table-column prop="applicant" label="申请人" width="90" />
-        <el-table-column label="设备" min-width="150">
+        <el-table-column label="设备" min-width="140">
           <template #default="{ row }">{{ row.devices.join('、') }}</template>
+        </el-table-column>
+        <el-table-column label="冲突原因 / 备注" min-width="236">
+          <template #default="{ row }">
+            <span v-if="row.reason" :class="row.status === 'conflict' ? 'reason reason--warn' : 'reason'">
+              {{ row.reason }}
+            </span>
+            <span v-else class="muted">—</span>
+          </template>
         </el-table-column>
         <el-table-column label="状态" width="120">
           <template #default="{ row }">
@@ -70,13 +80,13 @@ async function reject(row) {
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="150" fixed="right">
+        <el-table-column label="操作" width="140">
           <template #default="{ row }">
             <template v-if="['pending', 'conflict'].includes(row.status)">
               <el-button link type="success" @click="approve(row)">通过</el-button>
               <el-button link type="danger" @click="reject(row)">驳回</el-button>
             </template>
-            <span v-else class="muted">{{ row.reason || '—' }}</span>
+            <span v-else class="muted">—</span>
           </template>
         </el-table-column>
       </el-table>
@@ -116,5 +126,15 @@ async function reject(row) {
 .muted {
   font-size: 12px;
   color: #c0c4cc;
+}
+
+.reason {
+  font-size: 13px;
+  line-height: 1.5;
+  color: #606266;
+}
+
+.reason--warn {
+  color: #b88230;
 }
 </style>

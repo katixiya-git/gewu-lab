@@ -79,7 +79,7 @@ export const bookings = [
     devices: ['六轴机械臂'],
     purpose: '机械臂抓取实验',
     status: 'conflict',
-    reason: '与 BK20261104005 时间冲突，等待管理员协调',
+    reason: '与 BK20261104005（机器人实验室 11-05 09:30–11:30，李同学）时段重叠，等待管理员决定保留哪一单',
     applicant: '李同学',
     hoursUntilStart: 15
   },
