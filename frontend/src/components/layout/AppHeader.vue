@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ArrowDown, Bell, Expand, Fold } from '@element-plus/icons-vue'
 import { notices } from '@/mock/data'
+import { clearAuth, getAuth } from '@/utils/auth'
 
 const props = defineProps({
   nav: { type: Array, default: () => [] },
@@ -16,6 +17,12 @@ const props = defineProps({
 const emit = defineEmits(['update:collapsed'])
 const router = useRouter()
 
+const auth = getAuth()
+const displayName = computed(() => auth?.name || props.userName)
+const displayRole = computed(() =>
+  auth?.role ? (auth.role === 'admin' ? '管理员' : '学生') : props.roleText
+)
+
 const unreadCount = computed(() => notices.filter((item) => !item.read).length)
 
 function toggle() {
@@ -23,6 +30,7 @@ function toggle() {
 }
 
 function logout() {
+  clearAuth()
   router.push('/login')
 }
 </script>
@@ -71,13 +79,13 @@ function logout() {
 
       <el-dropdown>
         <span class="app-header__user">
-          <el-avatar :size="28">{{ userName.slice(0, 1) }}</el-avatar>
-          <span class="app-header__name">{{ userName }}</span>
+          <el-avatar :size="28">{{ displayName.slice(0, 1) }}</el-avatar>
+          <span class="app-header__name">{{ displayName }}</span>
           <el-icon><ArrowDown /></el-icon>
         </span>
         <template #dropdown>
           <el-dropdown-menu>
-            <el-dropdown-item disabled>{{ roleText }} · 个人设置待接</el-dropdown-item>
+            <el-dropdown-item disabled>{{ displayRole }} · 个人设置待接</el-dropdown-item>
             <el-dropdown-item divided @click="logout">退出登录</el-dropdown-item>
           </el-dropdown-menu>
         </template>
