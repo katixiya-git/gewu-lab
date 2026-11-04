@@ -65,11 +65,26 @@ async function reject(row) {
         <el-table-column label="设备" min-width="140">
           <template #default="{ row }">{{ row.devices.join('、') }}</template>
         </el-table-column>
-        <el-table-column label="冲突原因 / 备注" min-width="236">
+        <el-table-column label="冲突原因" width="112">
           <template #default="{ row }">
-            <span v-if="row.reason" :class="row.status === 'conflict' ? 'reason reason--warn' : 'reason'">
-              {{ row.reason }}
-            </span>
+            <el-popover v-if="row.reason" placement="left" :width="340" trigger="click">
+              <template #reference>
+                <el-button
+                  link
+                  size="small"
+                  :type="row.status === 'conflict' ? 'warning' : 'primary'"
+                >
+                  查看原因
+                </el-button>
+              </template>
+              <div class="reason-pop">
+                <p class="reason-pop__title">
+                  {{ row.status === 'conflict' ? '冲突原因' : '备注' }}
+                </p>
+                <p class="reason-pop__text">{{ row.reason }}</p>
+                <p class="reason-pop__meta">{{ row.id }} · {{ row.labName }} · {{ row.date }}</p>
+              </div>
+            </el-popover>
             <span v-else class="muted">—</span>
           </template>
         </el-table-column>
@@ -128,13 +143,25 @@ async function reject(row) {
   color: #c0c4cc;
 }
 
-.reason {
+.reason-pop__title {
+  margin-bottom: 8px;
   font-size: 13px;
-  line-height: 1.5;
-  color: #606266;
+  font-weight: 600;
+  color: #303133;
 }
 
-.reason--warn {
-  color: #b88230;
+.reason-pop__text {
+  font-size: 13px;
+  line-height: 1.7;
+  color: #606266;
+  word-break: break-word;
+}
+
+.reason-pop__meta {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed #e4e7ed;
+  font-size: 12px;
+  color: #909399;
 }
 </style>
