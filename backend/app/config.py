@@ -1,4 +1,5 @@
 from functools import lru_cache
+from urllib.parse import quote_plus
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -13,6 +14,15 @@ class Settings(BaseSettings):
     db_user: str = "root"
     db_password: str = ""
     db_name: str = "gewu"
+
+    @property
+    def database_url(self) -> str:
+        """SQLAlchemy 异步连接串（aiomysql 驱动）。"""
+        password = quote_plus(self.db_password)
+        return (
+            f"mysql+aiomysql://{self.db_user}:{password}"
+            f"@{self.db_host}:{self.db_port}/{self.db_name}?charset=utf8mb4"
+        )
 
 
 @lru_cache
