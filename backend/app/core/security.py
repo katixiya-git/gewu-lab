@@ -1,6 +1,11 @@
-"""密码哈希与校验：bcrypt。"""
+"""密码哈希（bcrypt）与 JWT 签发/解析。"""
+
+from datetime import datetime, timedelta, timezone
 
 import bcrypt
+import jwt
+
+from app.config import get_settings
 
 
 def hash_password(password: str) -> str:
@@ -14,3 +19,22 @@ def verify_password(password: str, password_hash: str) -> bool:
         return bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8"))
     except ValueError:
         return False
+
+
+def create_access_token(user_id: int, role: str) -> str:
+    """按用户签发 JWT：sub=用户 id，role 进 token，过期时间取自配置。"""
+    settings = get_settings()
+    now = datetime.now(timezone.utc)
+    payload = {
+        "sub": str(user_id),
+        "role": role,
+        "iat": now,
+        "exp": now + timedelta(minutes=settings.jwt_expire_minutes),
+    }
+    return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+
+
+def decode_token(token: str) -> dict:
+    """解析并校验 JWT；过期/篡改会抛 jwt.InvalidTokenError 的子类。"""
+    settings = get_settings()
+    return jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])

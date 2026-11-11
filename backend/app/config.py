@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     db_password: str = ""
     db_name: str = "gewu"
 
+    jwt_secret: str = "gewu-local-dev-secret-please-change"
+    jwt_algorithm: str = "HS256"
+    jwt_expire_minutes: int = 720
+
     @property
     def database_url(self) -> str:
         """SQLAlchemy 异步连接串（aiomysql 驱动）。"""
