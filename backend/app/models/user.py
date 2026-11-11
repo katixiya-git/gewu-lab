@@ -46,5 +46,27 @@ class User(Base):
         comment="状态：active / disabled",
     )
 
+    avatar: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        comment="头像 URL",
+    )
+
+    phone: Mapped[str | None] = mapped_column(
+        String(20),
+        unique=True,
+        index=True,
+        nullable=True,
+        comment="手机号",
+    )
+
+    email: Mapped[str | None] = mapped_column(
+        String(128),
+        unique=True,
+        index=True,
+        nullable=True,
+        comment="邮箱",
+    )
+
     def __repr__(self) -> str:
         return f"<User id={self.id} username={self.username!r} role={self.role!r}>"
