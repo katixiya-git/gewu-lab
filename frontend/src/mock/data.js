@@ -150,11 +150,61 @@ export const bookings = [
 ]
 
 export const users = [
-  { id: 1, name: '张同学', role: '学生', account: 'stu_zhang', phone: '138****0001', status: '正常' },
-  { id: 2, name: '李同学', role: '学生', account: 'stu_li', phone: '138****0002', status: '正常' },
-  { id: 3, name: '王老师', role: '教师', account: 'tea_wang', phone: '139****0003', status: '正常' },
-  { id: 4, name: '陈管理员', role: '管理员', account: 'admin_chen', phone: '137****0004', status: '正常' },
-  { id: 5, name: '刘同学', role: '学生', account: 'stu_liu', phone: '138****0005', status: '停用' }
+  {
+    id: 1,
+    username: 'admin',
+    name: '王老师',
+    role: 'admin',
+    status: 'active',
+    avatar: null,
+    phone: '13800000001',
+    email: 'admin@gewu.local',
+    createTime: '2026-11-01 09:00:00'
+  },
+  {
+    id: 2,
+    username: 'student',
+    name: '张同学',
+    role: 'student',
+    status: 'active',
+    avatar: null,
+    phone: '13800000002',
+    email: 'student@gewu.local',
+    createTime: '2026-11-02 10:15:00'
+  },
+  {
+    id: 3,
+    username: 'stu_li',
+    name: '李同学',
+    role: 'student',
+    status: 'active',
+    avatar: null,
+    phone: '13800000003',
+    email: 'li@gewu.local',
+    createTime: '2026-11-03 14:20:00'
+  },
+  {
+    id: 4,
+    username: 'stu_liu',
+    name: '刘同学',
+    role: 'student',
+    status: 'disabled',
+    avatar: null,
+    phone: '13800000005',
+    email: 'liu@gewu.local',
+    createTime: '2026-11-05 08:30:00'
+  },
+  {
+    id: 5,
+    username: 'admin_chen',
+    name: '陈管理员',
+    role: 'admin',
+    status: 'active',
+    avatar: null,
+    phone: '13700000004',
+    email: 'chen@gewu.local',
+    createTime: '2026-11-06 16:45:00'
+  }
 ]
 
 export const notices = [
