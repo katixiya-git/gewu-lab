@@ -30,12 +30,15 @@ backend/
 # 激活虚拟环境
 .venv\Scripts\Activate.ps1
 
-# 运行依赖
+# 当前阶段只装这 5 个（版本已锁定）
 python -m pip install -r requirements.txt
-
-# 开发依赖（可选）
-python -m pip install -r requirements-dev.txt
 ```
+
+`requirements.txt` 锁定：fastapi 0.115.13、uvicorn 0.34.0、SQLAlchemy 2.0.41、PyMySQL 1.1.1、pydantic-settings 2.7.1。
+
+如果连 MySQL 8 时报 `cryptography is required`，再补：`python -m pip install cryptography`。
+
+开发工具与后续依赖（ruff / pytest / redis / langgraph 等）都写在文件注释里，用到再装。
 
 ## 配置
 
