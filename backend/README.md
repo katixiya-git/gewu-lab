@@ -34,6 +34,8 @@ backend/
 python -m pip install -r requirements.txt
 ```
 
+已为本项目 venv 配置阿里云镜像（`.venv/pip.ini`，`global.index-url = https://mirrors.aliyun.com/pypi/simple/`、超时 60s），装包会自动走镜像。
+
 `requirements.txt` 锁定：fastapi 0.115.13、uvicorn 0.34.0、SQLAlchemy 2.0.41、PyMySQL 1.1.1、pydantic-settings 2.7.1。
 
 如果连 MySQL 8 时报 `cryptography is required`，再补：`python -m pip install cryptography`。
