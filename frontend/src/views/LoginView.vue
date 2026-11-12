@@ -3,7 +3,8 @@ import { onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ChatLineRound, Calendar, OfficeBuilding, Lock, User } from '@element-plus/icons-vue'
-import { setAuth, getRememberedUsername, setRememberedUsername } from '@/utils/auth'
+import { login } from '@/api/auth'
+import { getRememberedUsername, setAuth, setRememberedUsername } from '@/utils/auth'
 
 const router = useRouter()
 const route = useRoute()
@@ -46,24 +47,29 @@ function fillDemo() {
   form.password = demo.password
 }
 
-function submit() {
-  formRef.value?.validate((valid) => {
-    if (!valid) return
-    loading.value = true
-    // 登录接口未接入：本地模拟一次请求耗时，直接按角色进入
-    window.setTimeout(() => {
-      const demo = DEMO[role.value]
-      const isDemoAccount =
-        form.username === demo.username && form.password === demo.password
-      const name = isDemoAccount ? demo.name : form.username
-      setAuth({ role: role.value, name, username: form.username })
-      setRememberedUsername(remember.value ? form.username : '')
-      loading.value = false
-      ElMessage.success(`欢迎回来，${name}`)
-      const fallback = role.value === 'admin' ? '/admin/reviews' : '/chat'
-      router.push(route.query.redirect || fallback)
-    }, 420)
-  })
+async function submit() {
+  const valid = await formRef.value?.validate().catch(() => false)
+  if (!valid) return
+
+  loading.value = true
+  try {
+    const data = await login({ username: form.username, password: form.password })
+    setAuth({ token: data.accessToken, user: data.user })
+    setRememberedUsername(remember.value ? form.username : '')
+
+    if (data.user.role !== role.value) {
+      const actual = data.user.role === 'admin' ? '管理员' : '学生'
+      ElMessage.info(`该账号是${actual}，已进入对应入口`)
+    }
+
+    ElMessage.success(`欢迎回来，${data.user.name}`)
+    const fallback = data.user.role === 'admin' ? '/admin/reviews' : '/chat'
+    router.replace(route.query.redirect || fallback)
+  } catch (error) {
+    ElMessage.error(error.message || '登录失败，请重试')
+  } finally {
+    loading.value = false
+  }
 }
 </script>
 
@@ -171,7 +177,7 @@ function submit() {
           <button type="button" class="panel__link" @click="fillDemo">
             {{ DEMO[role].username }} / {{ DEMO[role].password }}
           </button>
-          <span class="panel__demo-tip">（登录接口未接入，任意账号密码均可进入）</span>
+          <span class="panel__demo-tip">（学生与管理员账号均可登录，密码 123456）</span>
         </p>
       </div>
 

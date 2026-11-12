@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ArrowDown, Bell, Expand, Fold } from '@element-plus/icons-vue'
 import { notices } from '@/mock/data'
-import { clearAuth, getAuth } from '@/utils/auth'
+import { clearAuth, getUser } from '@/utils/auth'
 
 const props = defineProps({
   nav: { type: Array, default: () => [] },
@@ -17,10 +17,10 @@ const props = defineProps({
 const emit = defineEmits(['update:collapsed'])
 const router = useRouter()
 
-const auth = getAuth()
-const displayName = computed(() => auth?.name || props.userName)
+const user = getUser()
+const displayName = computed(() => user?.name || props.userName)
 const displayRole = computed(() =>
-  auth?.role ? (auth.role === 'admin' ? '管理员' : '学生') : props.roleText
+  user?.role ? (user.role === 'admin' ? '管理员' : '学生') : props.roleText
 )
 
 const unreadCount = computed(() => notices.filter((item) => !item.read).length)

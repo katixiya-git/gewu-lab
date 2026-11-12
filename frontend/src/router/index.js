@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import StudentLayout from '@/layouts/StudentLayout.vue'
-import { getAuth } from '@/utils/auth'
+import { fetchMe } from '@/api/auth'
+import { clearAuth, getToken, getUser, setAuth } from '@/utils/auth'
 import AdminLayout from '@/layouts/AdminLayout.vue'
 
 const router = createRouter({
@@ -83,24 +84,37 @@ const router = createRouter({
   ]
 })
 
-router.beforeEach((to) => {
-  const auth = getAuth()
+router.beforeEach(async (to) => {
+  const token = getToken()
 
-  // 已登录时访问登录页，直接回到对应首页
+  // 已登录时访问登录页，按角色回各自首页
   if (to.path === '/login') {
-    if (auth) return auth.role === 'admin' ? '/admin/reviews' : '/chat'
-    return true
+    const user = getUser()
+    if (!token) return true
+    return user ? (user.role === 'admin' ? '/admin/reviews' : '/chat') : true
   }
 
   // 未登录一律回登录页，并记住原目标
-  if (!auth) {
+  if (!token) {
     return { path: '/login', query: { redirect: to.fullPath } }
+  }
+
+  // 有 token 但没有用户信息（刷新页面/换标签页）：先向后端确认 token 是否仍有效
+  let user = getUser()
+  if (!user) {
+    try {
+      user = await fetchMe()
+      setAuth({ token, user })
+    } catch {
+      clearAuth()
+      return { path: '/login', query: { redirect: to.fullPath } }
+    }
   }
 
   // 角色与路由不匹配时纠正到各自首页
   const isAdminRoute = to.path.startsWith('/admin')
-  if (auth.role === 'admin' && !isAdminRoute) return '/admin/reviews'
-  if (auth.role !== 'admin' && isAdminRoute) return '/chat'
+  if (user.role === 'admin' && !isAdminRoute) return '/admin/reviews'
+  if (user.role !== 'admin' && isAdminRoute) return '/chat'
   return true
 })
 
