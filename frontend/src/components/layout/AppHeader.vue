@@ -1,9 +1,10 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ArrowDown, Bell, Expand, Fold } from '@element-plus/icons-vue'
 import { notices } from '@/mock/data'
 import { clearAuth, getUser } from '@/utils/auth'
+import ProfileDialog from '@/components/common/ProfileDialog.vue'
 
 const props = defineProps({
   nav: { type: Array, default: () => [] },
@@ -17,11 +18,14 @@ const props = defineProps({
 const emit = defineEmits(['update:collapsed'])
 const router = useRouter()
 
-const user = getUser()
-const displayName = computed(() => user?.name || props.userName)
+const user = ref(getUser())
+const profileVisible = ref(false)
+const displayName = computed(() => user.value?.name || props.userName)
 const displayRole = computed(() =>
-  user?.role ? (user.role === 'admin' ? '管理员' : '学生') : props.roleText
+  user.value?.role ? (user.value.role === 'admin' ? '管理员' : '学生') : props.roleText
 )
+
+const avatarUrl = computed(() => user.value?.avatar || '')
 
 const unreadCount = computed(() => notices.filter((item) => !item.read).length)
 
@@ -79,18 +83,20 @@ function logout() {
 
       <el-dropdown>
         <span class="app-header__user">
-          <el-avatar :size="28">{{ displayName.slice(0, 1) }}</el-avatar>
+          <el-avatar :size="28" :src="avatarUrl">{{ displayName.slice(0, 1) }}</el-avatar>
           <span class="app-header__name">{{ displayName }}</span>
           <el-icon><ArrowDown /></el-icon>
         </span>
         <template #dropdown>
           <el-dropdown-menu>
-            <el-dropdown-item @click="$router.push('/profile')">个人设置</el-dropdown-item>
+            <el-dropdown-item @click="profileVisible = true">个人信息</el-dropdown-item>
             <el-dropdown-item divided @click="logout">退出登录</el-dropdown-item>
           </el-dropdown-menu>
         </template>
       </el-dropdown>
     </div>
+
+    <ProfileDialog v-model="profileVisible" @updated="user = $event" />
   </div>
 </template>
 
