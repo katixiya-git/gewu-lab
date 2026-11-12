@@ -9,3 +9,8 @@ export function login(payload) {
 export function fetchMe() {
   return http.get('/auth/me')
 }
+
+/** 学生注册：成功即返回 { accessToken, tokenType, user }，等价于登录 */
+export function register(payload) {
+  return http.post('/auth/register', payload, { auth: false })
+}

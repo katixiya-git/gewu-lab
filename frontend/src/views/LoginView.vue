@@ -166,11 +166,15 @@ async function submit() {
             class="panel__submit"
             :loading="loading"
             native-type="submit"
-            @click="submit"
           >
             登 录
           </el-button>
         </el-form>
+
+        <p class="panel__register">
+          还没有账号？
+          <button type="button" class="panel__link" @click="router.push('/register')">立即注册</button>
+        </p>
 
         <p class="panel__demo">
           演示账号
@@ -263,6 +267,12 @@ async function submit() {
   font-size: 12px;
   color: rgb(234 243 251 / 45%);
   letter-spacing: 1px;
+}
+
+.panel__register {
+  margin-top: 16px;
+  font-size: 13px;
+  color: #909399;
 }
 
 /* 右侧表单区 */

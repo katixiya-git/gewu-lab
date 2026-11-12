@@ -14,6 +14,12 @@ const router = createRouter({
       meta: { title: '选择入口' }
     },
     {
+      path: '/register',
+      name: 'register',
+      component: () => import('@/views/RegisterView.vue'),
+      meta: { title: '学生注册' }
+    },
+    {
       path: '/',
       component: StudentLayout,
       children: [
@@ -87,8 +93,8 @@ const router = createRouter({
 router.beforeEach(async (to) => {
   const token = getToken()
 
-  // 已登录时访问登录页，按角色回各自首页
-  if (to.path === '/login') {
+  // 已登录时访问登录/注册页，按角色回各自首页
+  if (to.path === '/login' || to.path === '/register') {
     const user = getUser()
     if (!token) return true
     return user ? (user.role === 'admin' ? '/admin/reviews' : '/chat') : true
