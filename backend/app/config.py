@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 720
 
+    # 上传：本地磁盘目录（相对 backend 运行目录）与单文件大小上限
+    upload_dir: str = "uploads"
+    upload_max_mb: int = 20
+
     # 允许跨域的前端来源；环境变量 CORS_ORIGINS 可用逗号分隔覆盖
     cors_origins: list[str] = [
         "http://localhost:5173",

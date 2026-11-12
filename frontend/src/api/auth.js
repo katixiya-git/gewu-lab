@@ -14,3 +14,8 @@ export function fetchMe() {
 export function register(payload) {
   return http.post('/auth/register', payload, { auth: false })
 }
+
+/** 更新个人资料：姓名、手机号、邮箱、头像；返回最新用户信息 */
+export function updateProfile(payload) {
+  return http.put('/auth/me', payload)
+}

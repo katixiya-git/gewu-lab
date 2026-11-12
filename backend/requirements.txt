@@ -16,3 +16,4 @@ pyjwt==2.10.1
 # langgraph
 # langchain-openai
 # httpx
+python-multipart==0.0.20

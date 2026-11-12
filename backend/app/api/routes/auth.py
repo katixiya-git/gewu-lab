@@ -10,7 +10,13 @@ from app.core.result import Result
 from app.core.security import create_access_token, hash_password, verify_password
 from app.db import get_session
 from app.models import User
-from app.schemas import LoginRequest, LoginResponse, RegisterRequest, UserOut
+from app.schemas import (
+    LoginRequest,
+    LoginResponse,
+    RegisterRequest,
+    UpdateProfileRequest,
+    UserOut,
+)
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -74,6 +80,32 @@ async def register(
 
     token = create_access_token(user.id, user.role)
     return Result.ok(LoginResponse(access_token=token, user=UserOut.model_validate(user)))
+
+# 更新个人资料（姓名、手机号、邮箱、头像）
+@router.put("/me", response_model=Result[UserOut], summary="更新个人资料")
+async def update_me(
+    body: UpdateProfileRequest,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> Result[UserOut]:
+    data = body.model_dump(exclude_unset=True)
+
+    if data.get("name") is not None:
+        current_user.name = data["name"]
+    for field in ("phone", "email", "avatar"):
+        if field in data:
+            setattr(current_user, field, data[field] or None)
+
+    try:
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="手机号或邮箱已被占用",
+        )
+    await session.refresh(current_user)
+    return Result.ok(UserOut.model_validate(current_user))
 
 # 获取当前登录用户
 @router.get("/me", response_model=Result[UserOut], summary="当前登录用户")

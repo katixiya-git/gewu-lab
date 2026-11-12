@@ -28,8 +28,7 @@ function redirectToLogin() {
 
 const http = axios.create({
   baseURL,
-  timeout: 10000,
-  headers: { 'Content-Type': 'application/json' }
+  timeout: 10000
 })
 
 // 请求拦截：自动带上 JWT；登录这类接口传 { auth: false } 跳过

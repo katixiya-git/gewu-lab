@@ -20,6 +20,12 @@ const router = createRouter({
       meta: { title: '学生注册' }
     },
     {
+      path: '/profile',
+      name: 'profile',
+      component: () => import('@/views/ProfileView.vue'),
+      meta: { title: '个人设置' }
+    },
+    {
       path: '/',
       component: StudentLayout,
       children: [
@@ -116,6 +122,9 @@ router.beforeEach(async (to) => {
       return { path: '/login', query: { redirect: to.fullPath } }
     }
   }
+
+  // 个人设置两类角色都能进
+  if (to.path === '/profile') return true
 
   // 角色与路由不匹配时纠正到各自首页
   const isAdminRoute = to.path.startsWith('/admin')
