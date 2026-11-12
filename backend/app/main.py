@@ -4,6 +4,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import auth
+from app.core.exceptions import register_exception_handlers
+from app.core.result import Result
 from app.db import close_db, init_db
 
 
@@ -24,9 +26,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+register_exception_handlers(app)
+
 app.include_router(auth.router)
 
 
-@app.get("/hello", tags=["meta"])
-def hello() -> dict[str, str]:
-    return {"message": "FastAPI 工程运行中"}
+@app.get("/hello", tags=["meta"], response_model=Result[dict[str, str]])
+def hello() -> Result[dict[str, str]]:
+    return Result.ok({"message": "FastAPI 工程运行中"})
+
