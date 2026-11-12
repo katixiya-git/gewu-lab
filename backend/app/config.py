@@ -1,6 +1,7 @@
 from functools import lru_cache
 from urllib.parse import quote_plus
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -18,6 +19,21 @@ class Settings(BaseSettings):
     jwt_secret: str = "gewu-local-dev-secret-please-change"
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 720
+
+    # 允许跨域的前端来源；环境变量 CORS_ORIGINS 可用逗号分隔覆盖
+    cors_origins: list[str] = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:5174",
+    ]
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def _split_origins(cls, value):
+        if isinstance(value, str) and not value.strip().startswith("["):
+            return [item.strip() for item in value.split(",") if item.strip()]
+        return value
 
     @property
     def database_url(self) -> str:

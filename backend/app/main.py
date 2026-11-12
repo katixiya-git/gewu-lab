@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import auth
+from app.config import get_settings
 from app.core.exceptions import register_exception_handlers
 from app.core.result import Result
 from app.db import close_db, init_db
@@ -20,7 +21,7 @@ app = FastAPI(title="格物 · 实验室智能预约 API", version="0.1.0", life
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=get_settings().cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -1,6 +1,12 @@
+import axios from 'axios'
+
 import { clearAuth, getToken } from '@/utils/auth'
 
-const BASE_URL = import.meta.env.VITE_API_BASE || 'http://127.0.0.1:8000'
+/**
+ * 开发期 baseURL 走 Vite 代理（/api -> 127.0.0.1:8000），浏览器看到的是同源请求，不触发跨域；
+ * 部署时可用 VITE_API_BASE 覆盖成完整地址。
+ */
+const baseURL = import.meta.env.VITE_API_BASE || '/api'
 
 export class ApiError extends Error {
   constructor(message, { status = 0, code = null, data = null } = {}) {
@@ -20,48 +26,65 @@ function redirectToLogin() {
   window.location.replace(`/login?redirect=${redirect}`)
 }
 
-/**
- * 统一请求入口：自动带 token、拆响应信封、401 清登录态。
- * 返回 Promise<data>，页面拿到的是信封里的 data，不用关心 code/message。
- */
-export async function request(path, { method = 'GET', body, auth = true } = {}) {
-  const headers = {}
-  if (body !== undefined) headers['Content-Type'] = 'application/json'
+const http = axios.create({
+  baseURL,
+  timeout: 10000,
+  headers: { 'Content-Type': 'application/json' }
+})
 
-  const token = getToken()
-  if (auth && token) headers.Authorization = `Bearer ${token}`
-
-  let response
-  try {
-    response = await fetch(`${BASE_URL}${path}`, {
-      method,
-      headers,
-      body: body === undefined ? undefined : JSON.stringify(body)
-    })
-  } catch {
-    throw new ApiError('无法连接服务器，请确认后端已启动')
+// 请求拦截：自动带上 JWT；登录这类接口传 { auth: false } 跳过
+http.interceptors.request.use((config) => {
+  if (config.auth !== false) {
+    const token = getToken()
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`
+    }
   }
+  return config
+})
 
-  let payload = null
-  try {
-    payload = await response.json()
-  } catch {
-    // 非 JSON 响应（如代理错误页）按 HTTP 状态处理
+// 响应拦截：拆 Result 信封，统一错误消息，401 清登录态
+http.interceptors.response.use(
+  (response) => {
+    const body = response.data
+    if (body && typeof body.code === 'number' && body.code !== 200) {
+      return Promise.reject(
+        new ApiError(body.message || '请求失败', {
+          status: response.status,
+          code: body.code,
+          data: body.data
+        })
+      )
+    }
+    return body?.data ?? body
+  },
+  (error) => {
+    const status = error.response?.status ?? 0
+    const body = error.response?.data
+
+    let message = body?.message
+    if (!message) {
+      if (status === 0) {
+        message =
+          error.code === 'ECONNABORTED' ? '请求超时，请稍后重试' : '无法连接服务器，请确认后端已启动'
+      } else {
+        message = `请求失败（HTTP ${status}）`
+      }
+    }
+
+    if (status === 401) {
+      clearAuth()
+      redirectToLogin()
+    }
+
+    return Promise.reject(
+      new ApiError(message, {
+        status,
+        code: body?.code ?? null,
+        data: body?.data ?? null
+      })
+    )
   }
+)
 
-  // 带着 token 还被拒，说明登录态失效：清掉并回登录页
-  if (response.status === 401) {
-    clearAuth()
-    redirectToLogin()
-  }
-
-  if (!response.ok || payload?.code !== 200) {
-    throw new ApiError(payload?.message || `请求失败（HTTP ${response.status}）`, {
-      status: response.status,
-      code: payload?.code ?? null,
-      data: payload?.data ?? null
-    })
-  }
-
-  return payload?.data ?? null
-}
+export default http
