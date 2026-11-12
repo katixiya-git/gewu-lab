@@ -19,3 +19,8 @@ export function register(payload) {
 export function updateProfile(payload) {
   return http.put('/auth/me', payload)
 }
+
+/** 修改密码：需要当前密码校验 */
+export function changePassword(payload) {
+  return http.put('/auth/password', payload)
+}

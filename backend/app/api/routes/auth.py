@@ -11,6 +11,7 @@ from app.core.security import create_access_token, hash_password, verify_passwor
 from app.db import get_session
 from app.models import User
 from app.schemas import (
+    ChangePasswordRequest,
     LoginRequest,
     LoginResponse,
     RegisterRequest,
@@ -106,6 +107,23 @@ async def update_me(
         )
     await session.refresh(current_user)
     return Result.ok(UserOut.model_validate(current_user))
+
+# 修改密码
+@router.put("/password", response_model=Result[None], summary="修改密码")
+async def change_password(
+    body: ChangePasswordRequest,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> Result[None]:
+    if not verify_password(body.old_password, current_user.password_hash):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="当前密码不正确")
+    if body.old_password == body.new_password:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="新密码不能与当前密码相同")
+
+    current_user.password_hash = hash_password(body.new_password)
+    await session.commit()
+    return Result.ok(None)
+
 
 # 获取当前登录用户
 @router.get("/me", response_model=Result[UserOut], summary="当前登录用户")

@@ -8,6 +8,11 @@ from app.schemas.common import CamelModel
 from app.schemas.user import UserOut
 
 
+class ChangePasswordRequest(CamelModel):
+    old_password: str = Field(min_length=1, max_length=64, description="当前密码")
+    new_password: str = Field(min_length=6, max_length=64, description="新密码")
+
+
 class UpdateProfileRequest(CamelModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=32)
     phone: Optional[str] = Field(default=None, pattern=r"^1[3-9]\d{9}$")

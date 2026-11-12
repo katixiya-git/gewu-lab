@@ -5,6 +5,7 @@ import { ArrowDown, Bell, Expand, Fold } from '@element-plus/icons-vue'
 import { notices } from '@/mock/data'
 import { clearAuth, getUser } from '@/utils/auth'
 import ProfileDialog from '@/components/common/ProfileDialog.vue'
+import ChangePasswordDialog from '@/components/common/ChangePasswordDialog.vue'
 
 const props = defineProps({
   nav: { type: Array, default: () => [] },
@@ -20,6 +21,7 @@ const router = useRouter()
 
 const user = ref(getUser())
 const profileVisible = ref(false)
+const passwordVisible = ref(false)
 const displayName = computed(() => user.value?.name || props.userName)
 const displayRole = computed(() =>
   user.value?.role ? (user.value.role === 'admin' ? '管理员' : '学生') : props.roleText
@@ -90,6 +92,7 @@ function logout() {
         <template #dropdown>
           <el-dropdown-menu>
             <el-dropdown-item @click="profileVisible = true">个人信息</el-dropdown-item>
+            <el-dropdown-item @click="passwordVisible = true">修改密码</el-dropdown-item>
             <el-dropdown-item divided @click="logout">退出登录</el-dropdown-item>
           </el-dropdown-menu>
         </template>
@@ -97,6 +100,7 @@ function logout() {
     </div>
 
     <ProfileDialog v-model="profileVisible" @updated="user = $event" />
+    <ChangePasswordDialog v-model="passwordVisible" />
   </div>
 </template>
 
