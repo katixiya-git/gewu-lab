@@ -14,9 +14,12 @@ from app.db import Base, close_db, engine
 
 
 async def main() -> None:
+    # create_all 只建「表不存在」的模型，已存在的表不会改动，因此可以重复执行；
+    # 注意它不会做迁移：字段增减仍要手写 ALTER 或重建表
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
+    # 打印实际存在的表，确认模型都已注册
     async with engine.connect() as conn:
         result = await conn.execute(text("SHOW TABLES"))
         print("tables:", [row[0] for row in result])

@@ -1,3 +1,9 @@
+"""上传文件元数据表 ORM 模型。
+
+磁盘上只存文件字节，谁上传的、属于哪个业务、是否公开、原始文件名
+这些关系信息都记录在 ``file_meta``；删除记录不等于删除磁盘文件。
+"""
+
 from sqlalchemy import BigInteger, Boolean, String
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -5,7 +11,7 @@ from app.db import Base
 
 
 class FileMeta(Base):
-    """上传文件元数据：磁盘上只存字节，关系都在这里。"""
+    """上传文件元数据。"""
 
     __tablename__ = "file_meta"
     __table_args__ = {"comment": "上传文件元数据"}
@@ -32,4 +38,5 @@ class FileMeta(Base):
     )
 
     def __repr__(self) -> str:
+        """便于日志里快速识别文件记录。"""
         return f"<FileMeta id={self.id} {self.biz_type} {self.original_name!r}>"

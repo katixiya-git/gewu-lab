@@ -40,6 +40,7 @@ SEED_USERS = [
 async def main() -> None:
     async with SessionLocal() as session:
         for item in SEED_USERS:
+            # 幂等：按用户名判断，已存在就跳过，避免重复插入撞唯一索引
             exists = await session.scalar(select(User).where(User.username == item["username"]))
             if exists is not None:
                 print(f"skip  {item['username']}（已存在，id={exists.id}）")
@@ -57,6 +58,7 @@ async def main() -> None:
             session.add(user)
             print(f"add   {item['username']} / {item['password']}（{item['role']}）")
 
+        # 循环内只 add，最后统一提交；中途失败则一条都不落库
         await session.commit()
 
         rows = (await session.scalars(select(User).order_by(User.id))).all()

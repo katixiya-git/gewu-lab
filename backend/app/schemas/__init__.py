@@ -1,3 +1,5 @@
+"""请求/响应模型包：统一导出，路由与服务层按需引用。"""
+
 from app.schemas.auth import (
     ChangePasswordRequest,
     LoginRequest,
