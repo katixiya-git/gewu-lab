@@ -1,69 +1,87 @@
 <script setup>
-import { computed } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { labs, devices } from '@/mock/data'
+import { ElMessage } from 'element-plus'
+import { fetchLab } from '@/api/lab'
+import { formatTime, labCategoryTagType, labCategoryText, openDaysText } from '@/utils/lab'
 
 const route = useRoute()
 const router = useRouter()
 
-const lab = computed(() => labs.find((item) => item.id === Number(route.params.id)))
-const labDevices = computed(() => {
-  if (!lab.value) return []
-  return lab.value.deviceIds
-    .map((id) => devices.find((device) => device.id === id))
-    .filter(Boolean)
-})
+const loading = ref(false)
+const lab = ref(null)
+const notFound = ref(false)
+
+async function load() {
+  loading.value = true
+  notFound.value = false
+  try {
+    lab.value = await fetchLab(route.params.id)
+  } catch (error) {
+    if (error.status === 404) {
+      notFound.value = true
+    } else {
+      ElMessage.error(error.message || '实验室详情加载失败')
+    }
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(load)
 </script>
 
 <template>
-  <section v-if="lab">
-    <el-page-header class="detail-back" @back="router.push('/labs')">
-      <template #content>
-        <span class="detail-title">{{ lab.name }}</span>
-      </template>
-    </el-page-header>
+  <section v-loading="loading">
+    <template v-if="lab">
+      <el-page-header class="detail-back" @back="router.push('/labs')">
+        <template #content>
+          <span class="detail-title">{{ lab.name }}</span>
+          <el-tag :type="labCategoryTagType(lab.category)" size="small" class="detail-tag">
+            {{ labCategoryText(lab.category) }}
+          </el-tag>
+        </template>
+      </el-page-header>
 
-    <div class="detail-grid">
-      <div class="detail-card">
-        <h3 class="detail-card__title">基本信息</h3>
-        <dl class="detail-card__meta">
-          <div><dt>容纳人数</dt><dd>{{ lab.capacity }} 人</dd></div>
-          <div><dt>开放时间</dt><dd>{{ lab.openTime }}</dd></div>
-          <div><dt>用途说明</dt><dd>{{ lab.description }}</dd></div>
-        </dl>
+      <div class="detail-grid">
+        <div class="detail-card">
+          <h3 class="detail-card__title">基本信息</h3>
+          <dl class="detail-card__meta">
+            <div><dt>位置</dt><dd>{{ lab.location || '—' }}</dd></div>
+            <div><dt>容纳人数</dt><dd>{{ lab.capacity }} 人</dd></div>
+            <div>
+              <dt>开放时间</dt>
+              <dd>
+                {{ openDaysText(lab.openDays) }} {{ formatTime(lab.openTime) }}-{{
+                  formatTime(lab.closeTime)
+                }}
+              </dd>
+            </div>
+            <div><dt>用途说明</dt><dd>{{ lab.description || '—' }}</dd></div>
+          </dl>
+        </div>
+
+        <div class="detail-card">
+          <h3 class="detail-card__title">使用规则</h3>
+          <p class="detail-card__rule">{{ lab.rule || '暂无规则说明' }}</p>
+        </div>
       </div>
 
       <div class="detail-card">
-        <h3 class="detail-card__title">使用规则</h3>
-        <p class="detail-card__rule">{{ lab.rule }}</p>
+        <h3 class="detail-card__title">实验设备</h3>
+        <el-empty :image-size="72" description="设备管理模块开发中，可先到对话里说明所需设备" />
       </div>
-    </div>
 
-    <div class="detail-card">
-      <h3 class="detail-card__title">实验设备</h3>
-      <el-table :data="labDevices" size="small">
-        <el-table-column prop="name" label="设备名称" min-width="140" />
-        <el-table-column prop="model" label="型号" min-width="160" />
-        <el-table-column prop="count" label="数量" width="80" />
-        <el-table-column prop="status" label="状态" width="100">
-          <template #default="{ row }">
-            <el-tag :type="row.status === '正常' ? 'success' : 'warning'" size="small">
-              {{ row.status }}
-            </el-tag>
-          </template>
-        </el-table-column>
-      </el-table>
-    </div>
+      <div class="detail-actions">
+        <el-button @click="router.push('/labs')">返回列表</el-button>
+        <el-button type="primary" @click="router.push('/chat')">去预约这间实验室</el-button>
+      </div>
+    </template>
 
-    <div class="detail-actions">
-      <el-button @click="router.push('/labs')">返回列表</el-button>
-      <el-button type="primary" @click="router.push('/chat')">去预约这间实验室</el-button>
-    </div>
+    <el-empty v-else-if="notFound" description="实验室不存在或已停用">
+      <el-button type="primary" @click="router.push('/labs')">返回列表</el-button>
+    </el-empty>
   </section>
-
-  <el-empty v-else description="实验室不存在">
-    <el-button type="primary" @click="router.push('/labs')">返回列表</el-button>
-  </el-empty>
 </template>
 
 <style scoped>
@@ -75,6 +93,11 @@ const labDevices = computed(() => {
   font-size: 16px;
   font-weight: 600;
   color: #303133;
+}
+
+.detail-tag {
+  margin-left: 8px;
+  vertical-align: middle;
 }
 
 .detail-grid {
@@ -132,6 +155,7 @@ const labDevices = computed(() => {
   font-size: 13px;
   line-height: 1.8;
   color: #303133;
+  white-space: pre-line;
 }
 
 .detail-actions {

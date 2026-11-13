@@ -1,55 +1,74 @@
 <script setup>
+import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { labs, devices } from '@/mock/data'
+import { ElMessage } from 'element-plus'
+import { pageLabs } from '@/api/lab'
+import { labCategoryTagType, labCategoryText, openTimeText } from '@/utils/lab'
 
 const router = useRouter()
+const loading = ref(false)
+const labs = ref([])
 
-function deviceCount(lab) {
-  return lab.deviceIds.reduce((sum, id) => {
-    const device = devices.find((item) => item.id === id)
-    return sum + (device?.count ?? 0)
-  }, 0)
+async function load() {
+  loading.value = true
+  try {
+    const data = await pageLabs({ page: 1, size: 50 })
+    labs.value = data.items
+  } catch (error) {
+    ElMessage.error(error.message || '实验室列表加载失败')
+  } finally {
+    loading.value = false
+  }
 }
+
+onMounted(load)
 </script>
 
 <template>
-  <section>
+  <section v-loading="loading">
     <header class="page-head">
       <div>
         <h2 class="page-head__title">实验室</h2>
-        <p class="page-head__desc">共 {{ labs.length }} 间实验室，点击查看设备与使用规则。</p>
+        <p class="page-head__desc">共 {{ labs.length }} 间开放中，点击查看设备与使用规则。</p>
       </div>
       <el-button type="primary" plain @click="router.push('/chat')">去对话预约</el-button>
     </header>
 
-    <div class="lab-grid">
+    <div v-if="labs.length" class="lab-grid">
       <article
         v-for="lab in labs"
         :key="lab.id"
         class="lab-card"
         @click="router.push(`/labs/${lab.id}`)"
       >
-        <h3 class="lab-card__name">{{ lab.name }}</h3>
-        <p class="lab-card__desc">{{ lab.description }}</p>
+        <div class="lab-card__head">
+          <h3 class="lab-card__name">{{ lab.name }}</h3>
+          <el-tag :type="labCategoryTagType(lab.category)" size="small">
+            {{ labCategoryText(lab.category) }}
+          </el-tag>
+        </div>
+        <p class="lab-card__desc">{{ lab.description || '暂无简介' }}</p>
 
         <dl class="lab-card__meta">
+          <div>
+            <dt>位置</dt>
+            <dd>{{ lab.location || '—' }}</dd>
+          </div>
           <div>
             <dt>容纳人数</dt>
             <dd>{{ lab.capacity }} 人</dd>
           </div>
           <div>
             <dt>开放时间</dt>
-            <dd>{{ lab.openTime }}</dd>
-          </div>
-          <div>
-            <dt>设备数量</dt>
-            <dd>{{ deviceCount(lab) }} 台</dd>
+            <dd>{{ openTimeText(lab) }}</dd>
           </div>
         </dl>
 
         <span class="lab-card__more">查看详情 →</span>
       </article>
     </div>
+
+    <el-empty v-else-if="!loading" description="暂无可预约的实验室" />
   </section>
 </template>
 
@@ -95,6 +114,13 @@ function deviceCount(lab) {
   transform: translateY(-2px);
 }
 
+.lab-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .lab-card__name {
   font-size: 16px;
   font-weight: 600;
@@ -102,6 +128,7 @@ function deviceCount(lab) {
 }
 
 .lab-card__desc {
+  min-height: 38px;
   margin: 6px 0 14px;
   font-size: 12px;
   line-height: 1.6;
