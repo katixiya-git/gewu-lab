@@ -1,4 +1,8 @@
-"""用户管理业务逻辑：分页查询、增删改与管理员保护规则。"""
+"""用户管理业务逻辑：分页查询、增删改与管理员保护规则。
+
+本模块只处理业务规则与数据读写，不感知 HTTP 路由；接口层见
+``app.api.routes.users``。
+"""
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, or_, select
@@ -11,9 +15,12 @@ from app.schemas import UserCreateRequest, UserOut, UserPageOut, UserUpdateReque
 
 
 class UserService:
-    """用户管理的领域逻辑，路由层只负责收参、鉴权和返回信封。"""
+    """用户管理的业务服务。"""
 
     def __init__(self, session: AsyncSession) -> None:
+        """Args:
+            session: 由接口层依赖注入的异步数据库会话。
+        """
         self.session = session
 
     async def page(
@@ -25,6 +32,21 @@ class UserService:
         role: str | None,
         status_filter: str | None,
     ) -> UserPageOut:
+        """按条件分页查询用户。
+
+        ``keyword`` 会同时模糊匹配用户名、姓名、手机号与邮箱；
+        ``role``、``status`` 传入非法值时忽略该条件，不报错。
+
+        Args:
+            page: 页码，从 1 开始。
+            size: 每页条数，1–100。
+            keyword: 可选的关键词，最长 50 字符。
+            role: 可选的角色过滤，``student`` 或 ``admin``。
+            status_filter: 可选的状态过滤，``active`` 或 ``disabled``。
+
+        Returns:
+            UserPageOut: 总条数与当前页用户列表。
+        """
         conditions = []
 
         if keyword and keyword.strip():
@@ -64,6 +86,19 @@ class UserService:
         )
 
     async def create(self, body: UserCreateRequest) -> UserOut:
+        """创建用户。
+
+        密码不传时使用默认值 ``123456``；创建后即可登录。
+
+        Args:
+            body: 新用户的账号、姓名、密码、角色、状态与联系方式。
+
+        Returns:
+            UserOut: 创建成功的用户信息。
+
+        Raises:
+            HTTPException 409: 用户名、手机号或邮箱已被占用。
+        """
         exists = await self.session.scalar(
             select(User).where(User.username == body.username)
         )
@@ -99,6 +134,27 @@ class UserService:
     async def update(
         self, user_id: int, body: UserUpdateRequest, operator: User
     ) -> UserOut:
+        """编辑指定用户。
+
+        仅处理请求中显式提交的字段；字段传 ``null`` 表示清空。
+
+        安全规则：
+        1. 不能停用当前登录账号；
+        2. 最后一名启用中的管理员不能被降级或停用。
+
+        Args:
+            user_id: 目标用户主键。
+            body: 待修改的姓名、角色、状态、手机号、邮箱或头像。
+            operator: 发起操作的管理员（由接口层鉴权后传入）。
+
+        Returns:
+            UserOut: 更新后的用户信息。
+
+        Raises:
+            HTTPException 404: 目标用户不存在。
+            HTTPException 400: 停用自己，或触碰最后一名管理员保护。
+            HTTPException 409: 手机号或邮箱与其他账号冲突。
+        """
         user = await self._get_or_404(user_id)
         data = body.model_dump(exclude_unset=True)
 
@@ -139,6 +195,18 @@ class UserService:
         return UserOut.model_validate(user)
 
     async def delete(self, user_id: int, operator: User) -> None:
+        """删除指定用户（物理删除，不可恢复）。
+
+        安全规则：不能删除自己，也不能删掉最后一名启用中的管理员。
+
+        Args:
+            user_id: 目标用户主键。
+            operator: 发起操作的管理员（由接口层鉴权后传入）。
+
+        Raises:
+            HTTPException 404: 目标用户不存在。
+            HTTPException 400: 删除自己，或触碰最后一名管理员保护。
+        """
         user = await self._get_or_404(user_id)
 
         if user.id == operator.id:
@@ -156,6 +224,17 @@ class UserService:
         await self.session.commit()
 
     async def _get_or_404(self, user_id: int) -> User:
+        """按主键取用户，不存在时抛 404。
+
+        Args:
+            user_id: 用户主键。
+
+        Returns:
+            User: 用户 ORM 对象。
+
+        Raises:
+            HTTPException 404: 用户不存在。
+        """
         user = await self.session.get(User, user_id)
         if user is None:
             raise HTTPException(
@@ -164,6 +243,11 @@ class UserService:
         return user
 
     async def _count_active_admins(self) -> int:
+        """统计启用状态的管理员数量，用于管理员保护规则。
+
+        Returns:
+            int: 启用中的管理员人数。
+        """
         return (
             await self.session.scalar(
                 select(func.count())

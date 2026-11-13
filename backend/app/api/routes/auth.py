@@ -1,4 +1,7 @@
-"""登录与当前用户接口：只做参数接收、鉴权与响应封装。"""
+"""认证接口：只做参数接收、鉴权依赖与响应封装。
+
+业务实现在 ``app.services.auth_service.AuthService``。
+"""
 
 from fastapi import APIRouter, Depends
 
@@ -28,10 +31,20 @@ async def login(
     body: LoginRequest,
     service: AuthService = Depends(get_auth_service),
 ) -> Result[LoginResponse]:
-    """登录。
+    """账号密码登录。
 
-    用户不存在与密码错误统一返回 401「用户名或密码错误」，避免暴露账号是否存在；
-    账号被停用时返回 403。
+    用户不存在与密码错误统一返回 401，避免暴露账号是否存在。
+
+    Args:
+        body: 登录账号与明文密码。
+        service: 认证业务服务（依赖注入）。
+
+    Returns:
+        Result[LoginResponse]: code=200，data 含 accessToken、tokenType 与 user。
+
+    Raises:
+        HTTPException 401: 账号不存在或密码错误。
+        HTTPException 403: 账号已被停用。
     """
     return Result.ok(await service.login(body))
 
@@ -48,7 +61,16 @@ async def register(
 ) -> Result[LoginResponse]:
     """学生自助注册。
 
-    用户名、手机号、邮箱均唯一；用户名重复或唯一索引冲突时返回 409。
+    Args:
+        body: 用户名、姓名、密码及可选的手机号、邮箱。
+        service: 认证业务服务（依赖注入）。
+
+    Returns:
+        Result[LoginResponse]: code=200，data 含新账号的令牌与用户信息。
+
+    Raises:
+        HTTPException 409: 用户名、手机号或邮箱已被占用。
+        HTTPException 422: 字段格式不合法。
     """
     return Result.ok(await service.register(body))
 
@@ -66,7 +88,16 @@ async def update_me(
 ) -> Result[UserOut]:
     """更新当前登录用户的资料。
 
-    手机号或邮箱与其他账号冲突时返回 409。
+    Args:
+        body: 待修改的姓名、手机号、邮箱或头像；未提交的字段保持不变。
+        current_user: 当前登录用户（依赖注入）。
+        service: 认证业务服务（依赖注入）。
+
+    Returns:
+        Result[UserOut]: code=200，data 为更新后的用户信息。
+
+    Raises:
+        HTTPException 409: 手机号或邮箱与其他账号冲突。
     """
     return Result.ok(await service.update_profile(current_user, body))
 
@@ -84,7 +115,18 @@ async def change_password(
 ) -> Result[None]:
     """修改当前登录用户的密码。
 
-    当前密码不正确或新旧密码相同返回 400；成功后可继续使用旧令牌，下次登录改用新密码。
+    修改成功后旧令牌在有效期内仍可使用，下次登录需要用新密码。
+
+    Args:
+        body: 当前密码与新密码。
+        current_user: 当前登录用户（依赖注入）。
+        service: 认证业务服务（依赖注入）。
+
+    Returns:
+        Result[None]: code=200，无业务数据。
+
+    Raises:
+        HTTPException 400: 当前密码不正确，或新密码与当前密码相同。
     """
     await service.change_password(current_user, body)
     return Result.ok(None)
@@ -97,5 +139,12 @@ async def change_password(
     description="根据请求头中的 Bearer token 返回当前用户资料，前端刷新页面时用它恢复登录态。",
 )
 async def me(current_user: User = Depends(get_current_user)) -> Result[UserOut]:
-    """读取当前登录用户信息（不含密码哈希）。"""
+    """读取当前登录用户信息。
+
+    Args:
+        current_user: 当前登录用户（依赖注入）。
+
+    Returns:
+        Result[UserOut]: code=200，data 为用户信息（不含密码哈希）。
+    """
     return Result.ok(UserOut.model_validate(current_user))

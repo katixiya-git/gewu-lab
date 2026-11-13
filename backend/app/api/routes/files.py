@@ -1,4 +1,7 @@
-"""文件上传与私有文件下载接口：只做参数接收、鉴权与响应封装。"""
+"""文件接口：只做参数接收、鉴权与响应封装。
+
+业务实现在 ``app.services.file_service.FileService``。
+"""
 
 from typing import Optional
 
@@ -31,8 +34,21 @@ async def upload(
 ) -> Result[FileOut]:
     """上传单个文件并写入 file_meta。
 
-    规则：后缀白名单（图片/文档/压缩包）、单文件 ≤20MB、魔数校验；
-    avatar 与 lab_cover 写入公开目录并返回可直接访问的 URL，其余按私有文件处理。
+    avatar 与 lab_cover 写入公开目录，返回可直接访问的 URL；其余按私有文件
+    处理，返回需要鉴权的下载地址。
+
+    Args:
+        file: 待上传文件，不落临时文件，边读边写。
+        biz_type: 业务类型，决定公开/私有目录与子路径。
+        biz_id: 关联业务主键，可为空。
+        current_user: 当前登录用户（鉴权依赖），记为上传者。
+        service: 文件业务服务（依赖注入）。
+
+    Returns:
+        Result[FileOut]: code=200，data 含文件 id、url、name、size、mime 等。
+
+    Raises:
+        HTTPException 400: 后缀不在白名单、超过 20MB 或内容与后缀不符。
     """
     data = await service.upload(
         file=file, biz_type=biz_type, biz_id=biz_id, uploader=current_user
@@ -49,10 +65,20 @@ async def download(
     file_id: int,
     current_user: User = Depends(get_current_user),
     service: FileService = Depends(get_file_service),
-):
+) -> FileResponse:
     """下载文件流。
 
-    文件不存在或磁盘丢失返回 404；私有文件越权访问返回 403。
+    Args:
+        file_id: 文件元数据主键。
+        current_user: 当前登录用户（鉴权依赖），用于私有文件归属校验。
+        service: 文件业务服务（依赖注入）。
+
+    Returns:
+        FileResponse: 带原始文件名与 MIME 类型的文件流。
+
+    Raises:
+        HTTPException 403: 当前用户无权访问该私有文件。
+        HTTPException 404: 文件记录不存在或磁盘上的文件已丢失。
     """
     path, meta = await service.resolve_download(file_id, current_user)
     return FileResponse(path, media_type=meta.mime, filename=meta.original_name)
