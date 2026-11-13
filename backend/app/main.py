@@ -13,7 +13,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from app.api.routes import auth, devices, files, labs, users
+from app.api.routes import auth, bookings, devices, files, labs, users
 from app.config import get_settings
 from app.core.exceptions import register_exception_handlers
 from app.core.result import Result
@@ -44,6 +44,7 @@ app.add_middleware(
 register_exception_handlers(app)
 
 app.include_router(auth.router)
+app.include_router(bookings.router)
 app.include_router(devices.router)
 app.include_router(files.router)
 app.include_router(labs.router)

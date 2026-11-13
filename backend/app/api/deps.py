@@ -12,7 +12,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.security import decode_token
 from app.db import get_session
 from app.models import User
-from app.services import AuthService, DeviceService, FileService, LabService, UserService
+from app.services import (
+    AuthService,
+    BookingService,
+    DeviceService,
+    FileService,
+    LabService,
+    UserService,
+)
 
 # auto_error=False：没带 token 时不在这里抛错，统一由下面返回中文提示
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -102,3 +109,8 @@ def get_lab_service(session: AsyncSession = Depends(get_session)) -> LabService:
 def get_device_service(session: AsyncSession = Depends(get_session)) -> DeviceService:
     """构建设备业务服务（每个请求一个实例）。"""
     return DeviceService(session)
+
+
+def get_booking_service(session: AsyncSession = Depends(get_session)) -> BookingService:
+    """构建预约业务服务（每个请求一个实例）。"""
+    return BookingService(session)

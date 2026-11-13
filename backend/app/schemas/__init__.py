@@ -7,6 +7,15 @@ from app.schemas.auth import (
     RegisterRequest,
     UpdateProfileRequest,
 )
+from app.schemas.booking import (
+    BookingCancelRequest,
+    BookingCancelReviewRequest,
+    BookingCreateRequest,
+    BookingDeviceOut,
+    BookingOut,
+    BookingPageOut,
+    BookingReviewRequest,
+)
 from app.schemas.common import CamelModel
 from app.schemas.device import (
     DeviceCreateRequest,
@@ -31,6 +40,13 @@ from app.schemas.user import (
 )
 
 __all__ = [
+    "BookingCancelRequest",
+    "BookingCancelReviewRequest",
+    "BookingCreateRequest",
+    "BookingDeviceOut",
+    "BookingOut",
+    "BookingPageOut",
+    "BookingReviewRequest",
     "CamelModel",
     "ChangePasswordRequest",
     "DeviceCreateRequest",
