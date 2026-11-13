@@ -8,6 +8,13 @@ from app.schemas.auth import (
     UpdateProfileRequest,
 )
 from app.schemas.common import CamelModel
+from app.schemas.device import (
+    DeviceCreateRequest,
+    DeviceOut,
+    DevicePageOut,
+    DeviceStatusRequest,
+    DeviceUpdateRequest,
+)
 from app.schemas.file import FileOut
 from app.schemas.lab import (
     LabCreateRequest,
@@ -26,6 +33,11 @@ from app.schemas.user import (
 __all__ = [
     "CamelModel",
     "ChangePasswordRequest",
+    "DeviceCreateRequest",
+    "DeviceOut",
+    "DevicePageOut",
+    "DeviceStatusRequest",
+    "DeviceUpdateRequest",
     "FileOut",
     "LabCreateRequest",
     "LabOut",

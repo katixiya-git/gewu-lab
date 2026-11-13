@@ -9,7 +9,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Lab, User
+from app.models import Device, Lab, User
 from app.schemas.lab import (
     LabCreateRequest,
     LabOut,
@@ -179,16 +179,25 @@ class LabService:
     async def delete(self, lab_id: int) -> None:
         """删除实验室。
 
-        当前还没有预约表，这里只校验存在性；等预约模块落地后需要补
-        「存在未结束预约则拒绝删除」的规则。
+        实验室下还有设备时拒绝删除，避免产生孤儿设备；预约模块落地后
+        还需要补「存在未结束预约则拒绝删除」的规则。
 
         Args:
             lab_id: 实验室 id。
 
         Raises:
             HTTPException 404: 实验室不存在。
+            HTTPException 409: 实验室下仍有设备。
         """
         lab = await self._get_or_404(lab_id)
+        device_count = await self.session.scalar(
+            select(func.count()).select_from(Device).where(Device.lab_id == lab_id)
+        )
+        if device_count:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="请先移除该实验室下的设备",
+            )
         await self.session.delete(lab)
         await self.session.commit()
 

@@ -3,7 +3,9 @@ import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { fetchLab } from '@/api/lab'
+import { pageDevices } from '@/api/device'
 import { formatTime, labCategoryTagType, labCategoryText, openDaysText } from '@/utils/lab'
+import { deviceStatusTagType, deviceStatusText } from '@/utils/device'
 
 const route = useRoute()
 const router = useRouter()
@@ -11,12 +13,28 @@ const router = useRouter()
 const loading = ref(false)
 const lab = ref(null)
 const notFound = ref(false)
+const devices = ref([])
+const devicesLoading = ref(false)
+
+/** 设备列表随实验室一起加载；学生只会拿到正常/维护中的设备 */
+async function loadDevices() {
+  devicesLoading.value = true
+  try {
+    const data = await pageDevices({ page: 1, size: 50, labId: route.params.id })
+    devices.value = data.items
+  } catch (error) {
+    ElMessage.error(error.message || '设备列表加载失败')
+  } finally {
+    devicesLoading.value = false
+  }
+}
 
 async function load() {
   loading.value = true
   notFound.value = false
   try {
     lab.value = await fetchLab(route.params.id)
+    await loadDevices()
   } catch (error) {
     if (error.status === 404) {
       notFound.value = true
@@ -69,7 +87,28 @@ onMounted(load)
 
       <div class="detail-card">
         <h3 class="detail-card__title">实验设备</h3>
-        <el-empty :image-size="72" description="设备管理模块开发中，可先到对话里说明所需设备" />
+        <el-table v-loading="devicesLoading" :data="devices" stripe>
+          <el-table-column prop="name" label="设备名称" min-width="170" />
+          <el-table-column label="型号" min-width="180">
+            <template #default="{ row }">{{ row.model || '—' }}</template>
+          </el-table-column>
+          <el-table-column label="数量" width="90">
+            <template #default="{ row }">{{ row.totalCount }} 台</template>
+          </el-table-column>
+          <el-table-column label="状态" width="96">
+            <template #default="{ row }">
+              <el-tag :type="deviceStatusTagType(row.status)" size="small">
+                {{ deviceStatusText(row.status) }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="备注" min-width="180">
+            <template #default="{ row }">{{ row.note || '—' }}</template>
+          </el-table-column>
+          <template #empty>
+            <el-empty :image-size="64" description="该实验室暂未登记设备" />
+          </template>
+        </el-table>
       </div>
 
       <div class="detail-actions">
