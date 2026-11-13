@@ -7,7 +7,23 @@ from app.schemas.auth import (
 )
 from app.schemas.common import CamelModel
 from app.schemas.file import FileOut
-from app.schemas.user import UserOut
+from app.schemas.user import (
+    UserCreateRequest,
+    UserOut,
+    UserPageOut,
+    UserUpdateRequest,
+)
 
-__all__ = ["CamelModel", "ChangePasswordRequest", "FileOut", "LoginRequest", "LoginResponse",
-    "RegisterRequest", "UpdateProfileRequest", "UserOut"]
+__all__ = [
+    "CamelModel",
+    "ChangePasswordRequest",
+    "FileOut",
+    "LoginRequest",
+    "LoginResponse",
+    "RegisterRequest",
+    "UpdateProfileRequest",
+    "UserCreateRequest",
+    "UserOut",
+    "UserPageOut",
+    "UserUpdateRequest",
+]

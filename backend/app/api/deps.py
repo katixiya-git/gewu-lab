@@ -39,3 +39,10 @@ async def get_current_user(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="账号已停用，请联系管理员")
 
     return user
+
+
+async def get_current_admin(user: User = Depends(get_current_user)) -> User:
+    """只允许管理员访问。"""
+    if user.role != "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="需要管理员权限")
+    return user
