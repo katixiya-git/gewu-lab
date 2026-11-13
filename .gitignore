@@ -17,4 +17,4 @@ logs/
 *.log
 npm-debug.log*
 
-/backend/pip-unpack-*/
+/backend/pip-*/
