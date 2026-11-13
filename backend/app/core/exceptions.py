@@ -50,8 +50,20 @@ def _format_validation_error(error: dict) -> str:
         reason = f"长度不能超过 {ctx.get('max_length', '?')} 个字符"
     elif error_type == "string_type":
         reason = "必须是字符串"
+    elif error_type == "string_pattern_mismatch":
+        reason = "格式不正确"
     elif error_type == "int_parsing":
         reason = "必须是整数"
+    elif error_type == "greater_than_equal":
+        reason = f"不能小于 {ctx.get('ge', '?')}"
+    elif error_type == "less_than_equal":
+        reason = f"不能大于 {ctx.get('le', '?')}"
+    elif error_type == "greater_than":
+        reason = f"必须大于 {ctx.get('gt', '?')}"
+    elif error_type in ("time_parsing", "time_type"):
+        reason = "时间格式应为 HH:MM 或 HH:MM:SS"
+    elif error_type == "literal_error":
+        reason = f"只能是 {ctx.get('expected', '指定取值')}"
     elif error_type == "value_error":
         # 自定义 ValueError 会被 Pydantic 包成 "Value error, 具体原因"，这里剥掉前缀直接给中文
         raw = str(ctx.get("error") or error.get("msg") or "")
@@ -91,7 +103,15 @@ def register_exception_handlers(app: FastAPI) -> None:
         """
         errors = exc.errors()
         message = _format_validation_error(errors[0]) if errors else "参数不合法"
-        return JSONResponse(status_code=422, content=_body(422, message, data=errors))
+        # ctx 里可能带异常对象（如自定义 ValueError），直接塞 JSONResponse 会序列化失败
+        safe_errors = [
+            {
+                **error,
+                "ctx": {key: str(value) for key, value in (error.get("ctx") or {}).items()},
+            }
+            for error in errors
+        ]
+        return JSONResponse(status_code=422, content=_body(422, message, data=safe_errors))
 
     @app.exception_handler(Exception)
     async def handle_unexpected(request: Request, exc: Exception) -> JSONResponse:

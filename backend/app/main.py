@@ -13,7 +13,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from app.api.routes import auth, files, users
+from app.api.routes import auth, files, labs, users
 from app.config import get_settings
 from app.core.exceptions import register_exception_handlers
 from app.core.result import Result
@@ -45,6 +45,7 @@ register_exception_handlers(app)
 
 app.include_router(auth.router)
 app.include_router(files.router)
+app.include_router(labs.router)
 app.include_router(users.router)
 
 # 公开文件（头像、实验室封面）直接静态托管；私有附件不挂载，走 /api/files/{id}/download 鉴权
