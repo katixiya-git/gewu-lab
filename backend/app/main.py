@@ -40,7 +40,14 @@ ensure_upload_dirs()
 app.mount("/media", StaticFiles(directory=public_root()), name="media")
 
 
-@app.get("/hello", tags=["meta"], response_model=Result[dict[str, str]])
+@app.get(
+    "/hello",
+    tags=["meta"],
+    response_model=Result[dict[str, str]],
+    summary="健康检查",
+    description="不访问数据库、不需要登录，用于确认服务是否已启动。",
+)
 def hello() -> Result[dict[str, str]]:
+    """返回固定文案，供启动自检和前端联调使用。"""
     return Result.ok({"message": "FastAPI 工程运行中"})
 
