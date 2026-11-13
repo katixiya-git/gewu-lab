@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.security import decode_token
 from app.db import get_session
 from app.models import User
+from app.services import AuthService, FileService, UserService
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -46,3 +47,15 @@ async def get_current_admin(user: User = Depends(get_current_user)) -> User:
     if user.role != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="需要管理员权限")
     return user
+
+
+def get_auth_service(session: AsyncSession = Depends(get_session)) -> AuthService:
+    return AuthService(session)
+
+
+def get_user_service(session: AsyncSession = Depends(get_session)) -> UserService:
+    return UserService(session)
+
+
+def get_file_service(session: AsyncSession = Depends(get_session)) -> FileService:
+    return FileService(session)
