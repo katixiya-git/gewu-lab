@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { fetchLab } from '@/api/lab'
 import { pageDevices } from '@/api/device'
+import BookingDialog from '@/components/booking/BookingDialog.vue'
 import { formatTime, labCategoryTagType, labCategoryText, openDaysText } from '@/utils/lab'
 import { deviceStatusTagType, deviceStatusText } from '@/utils/device'
 
@@ -15,6 +16,7 @@ const lab = ref(null)
 const notFound = ref(false)
 const devices = ref([])
 const devicesLoading = ref(false)
+const bookingVisible = ref(false)
 
 /** 设备列表随实验室一起加载；学生只会拿到正常/维护中的设备 */
 async function loadDevices() {
@@ -44,6 +46,14 @@ async function load() {
   } finally {
     loading.value = false
   }
+}
+
+function openBooking() {
+  bookingVisible.value = true
+}
+
+function onBooked() {
+  router.push('/bookings')
 }
 
 onMounted(load)
@@ -113,9 +123,17 @@ onMounted(load)
 
       <div class="detail-actions">
         <el-button @click="router.push('/labs')">返回列表</el-button>
-        <el-button type="primary" @click="router.push('/chat')">去预约这间实验室</el-button>
+        <el-button type="primary" @click="openBooking">去预约这间实验室</el-button>
       </div>
     </template>
+
+    <BookingDialog
+      v-if="lab"
+      v-model="bookingVisible"
+      :lab="lab"
+      :devices="devices"
+      @created="onBooked"
+    />
 
     <el-empty v-else-if="notFound" description="实验室不存在或已停用">
       <el-button type="primary" @click="router.push('/labs')">返回列表</el-button>
