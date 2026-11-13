@@ -53,7 +53,9 @@ def _format_validation_error(error: dict) -> str:
     elif error_type == "int_parsing":
         reason = "必须是整数"
     elif error_type == "value_error":
-        reason = "取值不合法"
+        # 自定义 ValueError 会被 Pydantic 包成 "Value error, 具体原因"，这里剥掉前缀直接给中文
+        raw = str(ctx.get("error") or error.get("msg") or "")
+        reason = raw.removeprefix("Value error, ") or "取值不合法"
     else:
         # 没覆盖到的类型保留 Pydantic 原文，至少能看出问题
         reason = error.get("msg", "参数不合法")

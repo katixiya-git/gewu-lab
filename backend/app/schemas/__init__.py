@@ -9,6 +9,13 @@ from app.schemas.auth import (
 )
 from app.schemas.common import CamelModel
 from app.schemas.file import FileOut
+from app.schemas.lab import (
+    LabCreateRequest,
+    LabOut,
+    LabPageOut,
+    LabStatusRequest,
+    LabUpdateRequest,
+)
 from app.schemas.user import (
     UserCreateRequest,
     UserOut,
@@ -20,6 +27,11 @@ __all__ = [
     "CamelModel",
     "ChangePasswordRequest",
     "FileOut",
+    "LabCreateRequest",
+    "LabOut",
+    "LabPageOut",
+    "LabStatusRequest",
+    "LabUpdateRequest",
     "LoginRequest",
     "LoginResponse",
     "RegisterRequest",
