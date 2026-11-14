@@ -6,11 +6,18 @@ import { createBooking } from '@/api/booking'
 import { bookingTypeText, statusTagType, statusText } from '@/utils/booking'
 
 /**
- * 对话里的预约确认单。
+ * 【导读】对话里的预约确认单：只负责「展示 + 确认后提交」。
  *
  * 卡片数据来自后端 propose_booking 的工具结果（SSE 的 booking_card 事件），
+ * 由 `chatEvents.js` 挂到助手消息的 `cards` 上，再由 `ChatView.vue` 渲染。
+ *
  * 这里只做展示与「确认后提交」：校验规则仍由 POST /api/bookings 判断，
  * 提交成功（含冲突待协调）后卡片原地变成结果态，不再允许重复提交。
+ *
+ * 为什么用 `computed` 而不是 `watch`：文案是由 card 算出来的，不该再存一份
+ * 状态；computed 只在依赖变化时重算，也不会出现「两份数据对不上」。
+ *
+ * `props` 是父组件传进来的只读数据，子组件改不了，只能用本地 ref 记结果。
  */
 const props = defineProps({
   card: { type: Object, required: true },
@@ -21,21 +28,25 @@ const props = defineProps({
 })
 
 const router = useRouter()
+// 本地状态三件套：请求中 / 已建单 / 报错文案，三者决定按钮和抬头长什么样
 const submitting = ref(false)
 const created = ref(null)
 const errorText = ref('')
 
+// 起个语义名：被取代 = 整卡锁定，后面每个入口都先查它
 const locked = computed(() => props.superseded)
 
 const timeRange = computed(() => `${props.card.startTime}–${props.card.endTime}`)
 const typeText = computed(
   () => props.card.bookingTypeText || bookingTypeText(props.card.bookingType)
 )
+// 设备名是数组，展示时用「、」连起来；一个都没有就显示「无」
 const deviceText = computed(() =>
   props.card.deviceNames?.length ? props.card.deviceNames.join('、') : '无'
 )
 
 async function confirm() {
+  // 三重闸门：请求中、已建单、被取代，任一命中都不许重复提交
   if (submitting.value || created.value || locked.value) return
   submitting.value = true
   errorText.value = ''
@@ -67,6 +78,7 @@ async function confirm() {
 }
 
 function goLab() {
+  // 作废的卡片不允许跳详情，免得用户照着过期的条件去查看
   if (locked.value) return
   router.push({ name: 'lab-detail', params: { id: props.card.labId } })
 }
@@ -78,6 +90,7 @@ function goBookings() {
 
 <template>
   <div class="booking-card" :class="{ 'booking-card--done': created, 'booking-card--void': superseded }">
+    <!-- 抬头三种形态：已作废 / 已提交（带状态标签）/ 未提交（带预约类型） -->
     <div class="booking-card__head">
       <span class="booking-card__title">{{ created ? '预约已提交' : '预约确认单' }}</span>
       <el-tag v-if="superseded" type="info" size="small">已作废</el-tag>
@@ -119,6 +132,7 @@ function goBookings() {
     />
 
     <div class="booking-card__actions">
+      <!-- 建单成功后只剩一个入口：去列表看审核状态 -->
       <el-button v-if="created" type="primary" @click="goBookings">去我的预约</el-button>
       <template v-else>
         <el-button type="primary" :loading="submitting" :disabled="superseded || pending" @click="confirm">

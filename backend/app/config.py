@@ -47,14 +47,18 @@ class Settings(BaseSettings):
     # 工具调用场景要稳定，温度调低；范围 0~2
     ai_temperature: float = Field(default=0.2, ge=0.0, le=2.0)
     ai_timeout_seconds: int = 60
-    # 每次请求最多带多少条历史消息，防止上下文无限膨胀
+    # 预留项：历史上是「每次请求最多带多少条历史消息」。现在历史由
+    # LangGraph 存在 Redis 里按 thread_id 自动读写，这个值已不参与逻辑。
     ai_max_history_messages: int = 20
 
     # ---- AI 会话状态（LangGraph checkpoint 存 Redis Stack）----
+    # 注意：这里的 Redis 要装 Redis Stack（带向量检索模块），
+    # 因为对话存档和知识库索引都靠它。
     redis_url: str = "redis://127.0.0.1:6379/0"
     # 为空表示 Redis 未设密码；有密码时客户端会先 AUTH
     redis_password: str = ""
-    # 会话空闲多久后过期（秒），默认 24 小时
+    # 预留项：会话空闲多久过期（秒）。当前代码没有把它传给 checkpointer，
+    # 所以存档不会自动过期，需要清理时得手工删 gewu:ai:* 开头的 key。
     ai_thread_ttl_seconds: int = 86400
     # Redis 里 checkpoint 的 key 前缀，便于和业务缓存区分
     ai_checkpoint_prefix: str = "gewu:ai"

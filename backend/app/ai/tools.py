@@ -1,14 +1,17 @@
-"""AI 助手的工具集。
+"""AI 助手的工具集（业务逻辑层，与 LangGraph 无关）。
 
 把「查实验室 / 查设备 / 查空档 / 查我的预约 / 校验预约草稿 / 生成预约卡片」
-封装成不依赖 LangGraph 的异步函数与 OpenAI function-calling 描述，
-agent 图直接绑定这些工具。
+封装成不依赖 LangGraph 的异步函数。``agent_tools.py`` 只做一层薄包装，
+真正的查询与判断都在这里，好处是这些函数可以独立单测，也不绑死框架。
 
 约定：
 - 所有函数第一个参数是 ``AsyncSession``，第二类是业务参数；
 - 返回纯 dict/list，字段用 camelCase，方便直接塞进模型上下文或 SSE 事件；
-- 不写数据库：``propose_booking`` 只校验并组装卡片，真正创建仍由用户点
+- **不写数据库**：``propose_booking`` 只校验并组装卡片，真正创建仍由用户点
   「确认预约」后走 ``BookingService.create``，AI 不替用户落库。
+
+为什么要刻意「不写库」：模型会犯错，也会被提示词注入带偏。把「创建」
+这个不可逆动作留给用户在卡片上点按钮，等于给 AI 加了一道人工闸门。
 """
 
 from datetime import date, datetime, time, timedelta
@@ -28,25 +31,34 @@ from app.services.booking_rules import (
     within_open_hours,
 )
 
-# 仍占用时段的状态：只要不是已驳回 / 已取消，都当作占位
+# 仍占用时段的状态：只要不是已驳回 / 已取消，都当作占位。
+# 注意 "conflict"（冲突待协调）也算占位——它还在等管理员裁决，不能当空档放出去。
 ACTIVE_STATUSES = ("pending", "approved", "conflict")
 
-# 中文标签，模型回答时直接可用
+# 中文标签，模型回答时直接可用（模型不必自己翻译英文枚举值，省得翻错）
 CATEGORY_LABELS = {"ai": "人工智能", "robot": "机器人", "cloud": "云计算", "se": "软件工程"}
 STATUS_LABELS = {"pending": "待审核", "approved": "已通过", "rejected": "已驳回", "conflict": "冲突待协调", "cancelled": "已取消"}
 BOOKING_TYPE_LABELS = {"personal": "个人", "group": "小组", "class": "班级"}
 
 
 def _hm(moment: time) -> str:
-    """把时间格式化成 ``HH:MM``。"""
+    """把时间格式化成 ``HH:MM``。
+
+    模型和前端都只认 ``"14:30"`` 这种写法；Python 的 ``time`` 直接转字符串
+    会带上秒（``14:30:00``），所以统一走这个函数。
+    """
     return moment.strftime("%H:%M")
 
 
 def _lab_brief(lab: Lab) -> dict[str, Any]:
-    """实验室摘要（给模型看的最小字段集）。"""
+    """实验室摘要（给模型看的最小字段集）。
+
+    只挑模型回答需要用的字段：多余的字段既费 token，也可能让模型抓错重点。
+    """
     return {
         "id": lab.id,
         "name": lab.name,
+        # 把 ai/robot 这类英文枚举翻成中文，模型回答时直接能用。
         "category": CATEGORY_LABELS.get(lab.category, lab.category),
         "location": lab.location,
         "capacity": lab.capacity,
@@ -74,6 +86,9 @@ def _device_brief(device: Device) -> dict[str, Any]:
 async def list_labs(session: AsyncSession, keyword: str | None = None) -> list[dict[str, Any]]:
     """查询开放中的实验室列表。
 
+    只返回 ``status == "enabled"`` 的：停用的实验室不该出现在 AI 的回答里，
+    否则用户会被引导去一间已经关掉的房。
+
     Args:
         session: 数据库会话。
         keyword: 可选，按名称或位置模糊匹配。
@@ -83,6 +98,8 @@ async def list_labs(session: AsyncSession, keyword: str | None = None) -> list[d
     """
     stmt = select(Lab).where(Lab.status == "enabled").order_by(Lab.sort_order, Lab.id)
     if keyword:
+        # 两边都补 %，就是 SQL 的「包含」语义；用参数化绑定而不是拼字符串，
+        # ORM 会负责转义，用户输入里有引号也不会出事。
         like = f"%{keyword.strip()}%"
         stmt = stmt.where(or_(Lab.name.like(like), Lab.location.like(like)))
     labs = (await session.execute(stmt)).scalars().all()
@@ -122,6 +139,8 @@ async def list_devices(session: AsyncSession, lab_id: int | None = None) -> list
     Returns:
         设备摘要列表（停用设备不返回）。
     """
+    # 这里 join 了实验室表：一是为了过滤掉「实验室已停用」的设备，
+    # 二是顺便把实验室名字带出来，模型回答时不用再查一次。
     stmt = (
         select(Device, Lab.name)
         .join(Lab, Lab.id == Device.lab_id)
@@ -136,6 +155,11 @@ async def list_devices(session: AsyncSession, lab_id: int | None = None) -> list
 
 async def find_free_slots(session: AsyncSession, lab_id: int, day: date) -> dict[str, Any]:
     """查询某实验室某天的空闲时段。
+
+    做法很朴素：拿开放时段当尺子，从开门时间起每 30 分钟切一格，
+    逐格判断「有没有和已有预约重叠、是不是已经过去」，剩下没被占的格子
+    就是空闲时段。为什么不直接算差集：30 分钟粒度下逐格扫描更容易读，
+    数据量也小（一天最多几十格）。
 
     Args:
         session: 数据库会话。
@@ -154,6 +178,7 @@ async def find_free_slots(session: AsyncSession, lab_id: int, day: date) -> dict
     if day < date.today():
         return {"date": day.isoformat(), "open": False, "reason": "日期已过去", "slots": []}
 
+    # 只取「还占着位」的预约来比对；已驳回/已取消的不该挡住空档。
     booked = (
         await session.execute(
             select(Booking).where(
@@ -166,6 +191,7 @@ async def find_free_slots(session: AsyncSession, lab_id: int, day: date) -> dict
 
     now = datetime.now()
     slots: list[dict[str, str]] = []
+    # cursor 是当前格子的起点，一路往后推；用「分钟数」比较比 time 对象好算。
     cursor = lab.open_time
     close_minutes = lab.close_time.hour * 60 + lab.close_time.minute
     while cursor.hour * 60 + cursor.minute + 30 <= close_minutes:
@@ -191,6 +217,7 @@ async def list_my_bookings(session: AsyncSession, user_id: int, status: str | No
     Returns:
         预约摘要列表，按日期倒序。
     """
+    # 限制 20 条：模型不需要（也不该）一次读几百条，上下文有限，越少越准。
     stmt = (
         select(Booking, Lab.name)
         .join(Lab, Lab.id == Booking.lab_id)
@@ -231,6 +258,11 @@ async def validate_booking_draft(
 ) -> dict[str, Any]:
     """校验一份预约草稿（不写库），返回是否可行与原因。
 
+    分两段：先做「不查库也能判」的静态规则（开放日、粒度、时长、人数……），
+    全部通过后再查一次库做重叠检测。为什么要分开：静态规则便宜，
+    先挡住明显不合法的请求，能少一次全表扫描；而且错误一次收集齐，
+    用户可以一次性看到所有问题，不用改一条提示一条。
+
     Args:
         session: 数据库会话。
         user_id: 学生用户 id。
@@ -244,12 +276,15 @@ async def validate_booking_draft(
     Returns:
         ``{"ok": bool, "errors": [...], "conflict": bool, "draft": {...}}``；
         ``conflict=True`` 表示与其他学生的已通过预约撞车，需要管理员协调。
+        注意 ``errors`` 非空时 ``ok`` 为 False，但 ``conflict`` 仍可能为 False
+        ——它俩是两件事：前者是「这份草稿不合法」，后者是「合法但会撞车」。
     """
     errors: list[str] = []
     lab = await session.get(Lab, lab_id)
     if lab is None or lab.status != "enabled":
         return {"ok": False, "errors": ["实验室不存在或已停用"], "conflict": False, "draft": None}
 
+    # ---- 第一段：静态规则，错误全收集，不做短路返回 ----
     if not is_open_on(lab.open_days, booking_date):
         errors.append("该日期不是实验室开放日")
     if not is_aligned(start_time) or not is_aligned(end_time):
@@ -264,6 +299,7 @@ async def validate_booking_draft(
     if booking_date < date.today():
         errors.append("不能预约过去的日期")
 
+    # ---- 设备检查：型号必须存在、属于该实验室、且没被停用 ----
     devices: list[Device] = []
     if device_ids:
         devices = (
@@ -279,6 +315,9 @@ async def validate_booking_draft(
             if device.status == "disabled":
                 errors.append(f"设备「{device.name}」已停用")
 
+    # ---- 第二段：只在静态规则全通过时才查重叠 ----
+    # 把自己的预约和别人的分开：自己撞自己算「错误」（直接不合法），
+    # 撞别人算「冲突」（可以提交，但会进入冲突待协调，由管理员裁决）。
     conflict = False
     if not errors:
         active = (
@@ -296,6 +335,8 @@ async def validate_booking_draft(
             errors.append("你在这个时段已有预约")
         conflict = any(overlaps(start_time, end_time, booking.start_time, booking.end_time) for booking in others)
 
+    # draft 同时充当「回给模型看的摘要」和「卡片的底座」，字段用 camelCase
+    # 是为了直接对齐前端 BookingCreateRequest。
     draft = {
         "labId": lab.id,
         "labName": lab.name,
@@ -327,6 +368,10 @@ async def propose_booking(
     通过后用当前账号补上联系人信息，拼成前端可以直接渲染的卡片。
     真正的创建发生在用户点卡片上的「确认预约」之后，由前端调用
     ``POST /api/bookings`` 完成——AI 只负责把预约准备到位，不替用户落库。
+
+    为什么复用 ``validate_booking_draft`` 而不是各写一套：规则只有一份，
+    卡片上显示「可行」的东西，点确认时一定会通过后端校验，不会出现
+    「AI 说能约，点了却报错」的割裂感。
 
     Args:
         session: 数据库会话。
@@ -360,8 +405,10 @@ async def propose_booking(
         device_ids,
     )
     if not checked["ok"]:
+        # 校验不过就把错误原样交回去，由模型翻译成用户能懂的话。
         return {"ok": False, "errors": checked["errors"], "conflict": False, "card": None}
 
+    # 联系人直接取账号资料：不让模型编手机号，也不需要用户重复填写。
     phone = (user.phone or "").strip()
     if not 6 <= len(phone) <= 20:
         return {
@@ -371,6 +418,7 @@ async def propose_booking(
             "card": None,
         }
 
+    # 模型可能传出 "Personal" 之类不合法的值，兜底回落 default，别让整轮失败。
     kind = booking_type if booking_type in BOOKING_TYPE_LABELS else "personal"
     card = {
         **checked["draft"],
@@ -389,6 +437,9 @@ async def search_knowledge(query: str, top_k: int = 3) -> list[dict[str, Any]]:
     用于回答规则类问题（怎么预约、提前多久、取消限制、设备使用、安全注意事项等）。
     知识库只覆盖 `docs/knowledge/` 里的实验室文档；查无结果时不要编造。
 
+    这一步就是 RAG（检索增强生成）的「检索」：先把问题和文档块都转成向量，
+    找出最像的几块原文，塞进模型上下文——比让模型「凭记忆回答」可靠得多。
+
     Args:
         query: 用户的自然语言问题。
         top_k: 返回条数，默认 3。
@@ -396,6 +447,8 @@ async def search_knowledge(query: str, top_k: int = 3) -> list[dict[str, Any]]:
     Returns:
         list[dict]: 每项含 docId/docTitle/section/similarity/content。
     """
+    # 延迟导入：knowledge_service 会用到 AI 配置，放在函数里可以避免
+    # 模块导入时就要求 Redis / API Key 齐全。
     from app.services.knowledge_service import KnowledgeService
 
     service = KnowledgeService()
@@ -412,6 +465,14 @@ async def search_knowledge(query: str, top_k: int = 3) -> list[dict[str, Any]]:
     ]
 
 
+# ---------------------------------------------------------------------------
+# 以下是历史遗留数据，**当前未被任何代码引用**。
+#
+# 早期版本直接调 OpenAI 的 function calling，需要手写这份「工具说明书」；
+# 换成 LangGraph 之后，``@tool`` 会从函数签名和 docstring 自动生成同样的
+# schema，这份手写副本就闲置了。留着是为了对照两边的参数差异，
+# 确认不是这次改动引入的回归。要删可以直接删掉整段（不影响任何功能）。
+# ---------------------------------------------------------------------------
 TOOL_SPECS: list[dict[str, Any]] = [
     {
         "type": "function",
