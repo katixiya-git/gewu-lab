@@ -6,6 +6,7 @@ pydantic-settings 负责大小写不敏感映射；本地开发把值写在 ``ba
 """
 
 from functools import lru_cache
+from pathlib import Path
 from urllib.parse import quote_plus
 
 from pydantic import Field, field_validator
@@ -58,6 +59,19 @@ class Settings(BaseSettings):
     # Redis 里 checkpoint 的 key 前缀，便于和业务缓存区分
     ai_checkpoint_prefix: str = "gewu:ai"
 
+    # ---- 知识库（Redis Stack 向量检索）----
+    kb_index_name: str = "idx:gewu_kb"
+    kb_key_prefix: str = "gewu:kb:"
+    # 相对仓库根目录；build_kb.py 会解析成绝对路径
+    kb_docs_dir: str = "docs/knowledge"
+    kb_chunk_size: int = Field(default=500, ge=100, le=2000)
+    kb_chunk_overlap: int = Field(default=80, ge=0, le=500)
+    kb_top_k: int = Field(default=5, ge=1, le=20)
+    kb_min_similarity: float = Field(default=0.20, ge=0.0, le=1.0)
+    kb_embedding_model: str = "text-embedding-v3"
+    kb_embedding_dim: int = Field(default=1024, ge=64, le=4096)
+    kb_embed_batch_size: int = Field(default=10, ge=1, le=64)
+
     # 允许跨域的前端来源；环境变量 CORS_ORIGINS 可用逗号分隔覆盖
     cors_origins: list[str] = [
         "http://localhost:5173",
@@ -98,6 +112,18 @@ class Settings(BaseSettings):
         路由层用它做快速失败，避免没配 key 时还把请求送进模型调用。
         """
         return self.ai_enabled and bool(self.ai_api_key.strip())
+
+    @property
+    def kb_docs_path(self) -> Path:
+        """语料目录的绝对路径。
+
+        ``kb_docs_dir`` 默认相对仓库根目录（backend/app → backend → 仓库根），
+        传入绝对路径时原样返回，便于测试指向临时目录。
+        """
+        path = Path(self.kb_docs_dir)
+        if path.is_absolute():
+            return path
+        return Path(__file__).resolve().parents[2] / path
 
 
 @lru_cache
