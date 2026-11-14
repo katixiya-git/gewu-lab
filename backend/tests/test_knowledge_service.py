@@ -175,6 +175,19 @@ async def client(api):
         yield ac
 
 
+@pytest.fixture
+def validation_api(api) -> FastAPI:
+    """请求体校验类用例专用：先把知识库服务顶成桩，屏蔽环境差异。
+
+    FastAPI 的处理顺序是「先解依赖，再校验请求体」。机器上没有配置 AI Key
+    时（例如 CI 环境没有 .env），``get_knowledge_service`` 会先抛 503，
+    请求根本走不到请求体校验，断言 422 的用例就会假失败。
+    这里把依赖换成桩，让用例只关心校验规则本身。
+    """
+    api.dependency_overrides[get_knowledge_service] = lambda: StubSearchService()
+    return api
+
+
 async def test_route_search_returns_result_envelope(api, client):
     service = StubSearchService([HIT])
     api.dependency_overrides[get_knowledge_service] = lambda: service
@@ -218,7 +231,7 @@ async def test_route_embedding_error_maps_to_502_envelope(api, client):
     assert body["message"] == "检索服务暂时不可用"
 
 
-async def test_route_rejects_empty_query(api, client):
+async def test_route_rejects_empty_query(validation_api, client):
     resp = await client.post("/api/knowledge/search", json={"query": ""})
 
     assert resp.status_code == 422
@@ -229,7 +242,7 @@ async def test_route_rejects_empty_query(api, client):
     assert "长度不能少于 1 个字符" in body["message"]
 
 
-async def test_route_rejects_top_k_over_limit(api, client):
+async def test_route_rejects_top_k_over_limit(validation_api, client):
     resp = await client.post("/api/knowledge/search", json={"query": "预约规则", "topK": 50})
 
     assert resp.status_code == 422
@@ -259,7 +272,7 @@ async def test_route_requires_login():
 
 
 @pytest.mark.parametrize("top_k", [0, 11])
-async def test_route_rejects_top_k_out_of_range(api, client, top_k):
+async def test_route_rejects_top_k_out_of_range(validation_api, client, top_k):
     resp = await client.post("/api/knowledge/search", json={"query": "预约规则", "topK": top_k})
 
     assert resp.status_code == 422
