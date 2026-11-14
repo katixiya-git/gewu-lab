@@ -306,6 +306,35 @@ async def validate_booking_draft(
     return {"ok": not errors, "errors": errors, "conflict": conflict, "draft": draft}
 
 
+async def search_knowledge(query: str, top_k: int = 3) -> list[dict[str, Any]]:
+    """检索实验室知识库，返回带出处的片段。
+
+    用于回答规则类问题（怎么预约、提前多久、取消限制、设备使用、安全注意事项等）。
+    知识库只覆盖 `docs/knowledge/` 里的实验室文档；查无结果时不要编造。
+
+    Args:
+        query: 用户的自然语言问题。
+        top_k: 返回条数，默认 3。
+
+    Returns:
+        list[dict]: 每项含 docId/docTitle/section/similarity/content。
+    """
+    from app.services.knowledge_service import KnowledgeService
+
+    service = KnowledgeService()
+    hits = await service.search(query, top_k=top_k)
+    return [
+        {
+            "docId": hit.doc_id,
+            "docTitle": hit.doc_title,
+            "section": hit.section,
+            "similarity": round(hit.similarity, 4),
+            "content": hit.content,
+        }
+        for hit in hits
+    ]
+
+
 TOOL_SPECS: list[dict[str, Any]] = [
     {
         "type": "function",
@@ -385,6 +414,25 @@ TOOL_SPECS: list[dict[str, Any]] = [
                     "deviceIds": {"type": "array", "items": {"type": "integer"}},
                 },
                 "required": ["labId", "date", "startTime", "endTime", "peopleCount"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_knowledge",
+            "description": (
+                "检索实验室知识库（使用手册/预约规则/取消规则/设备说明/安全规范）。"
+                "当用户问规则、流程、注意事项这类知识性问题时调用；返回带文档名与章节的片段，"
+                "回答时请用 [n] 标注出处。不要把查不到的内容编造成事实。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "检索问题，用用户的原始问法即可"},
+                    "topK": {"type": "integer", "minimum": 1, "maximum": 5, "description": "返回条数，默认 3"},
+                },
+                "required": ["query"],
             },
         },
     },
