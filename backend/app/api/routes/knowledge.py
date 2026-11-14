@@ -1,5 +1,7 @@
 """知识库检索接口。"""
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.api.deps import get_current_user, get_knowledge_service
@@ -7,6 +9,8 @@ from app.core.result import Result
 from app.knowledge.embedding import EmbeddingError
 from app.schemas.knowledge import KnowledgeHitOut, KnowledgeSearchRequest
 from app.services.knowledge_service import IndexEmptyError, KnowledgeService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/knowledge", tags=["knowledge"])
 
@@ -33,6 +37,7 @@ async def search_knowledge(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
         ) from exc
     except EmbeddingError as exc:
+        logger.warning("知识库检索向量化失败：%s", exc)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY, detail="检索服务暂时不可用"
         ) from exc

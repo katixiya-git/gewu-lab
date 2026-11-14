@@ -9,7 +9,7 @@ class KnowledgeSearchRequest(CamelModel):
     """检索入参：问题文本 + 返回条数。"""
 
     query: str = Field(min_length=1, max_length=500, description="检索问题")
-    top_k: int = Field(default=5, ge=1, le=10, alias="topK")
+    top_k: int | None = Field(default=None, ge=1, le=10, alias="topK")
 
 
 class KnowledgeHitOut(CamelModel):

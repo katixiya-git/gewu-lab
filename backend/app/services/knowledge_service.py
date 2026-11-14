@@ -57,7 +57,7 @@ class KnowledgeService:
         vectors = await self.embedder.embed([query])
         hits = await self.store.search(
             vectors[0],
-            top_k=top_k or self.settings.kb_top_k,
+            top_k=self.settings.kb_top_k if top_k is None else top_k,
             min_similarity=self.settings.kb_min_similarity,
         )
         return [KnowledgeHitOut(**hit) for hit in hits]

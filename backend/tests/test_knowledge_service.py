@@ -151,6 +151,14 @@ HIT = KnowledgeHitOut(
 )
 
 
+@pytest.fixture(autouse=True)
+def _clear_store_cache():
+    """每个用例前后清掉进程级 store，避免测试之间串缓存。"""
+    get_kb_store.cache_clear()
+    yield
+    get_kb_store.cache_clear()
+
+
 @pytest.fixture
 def api() -> FastAPI:
     """只挂知识库路由 + 全局异常处理器，避开真实数据库/Redis。"""
@@ -229,3 +237,53 @@ async def test_route_rejects_top_k_over_limit(api, client):
     assert body["code"] == 422
     assert "topK" in body["message"]
     assert "10" in body["message"]
+
+
+async def test_route_requires_login():
+    from fastapi import FastAPI
+    from httpx import ASGITransport, AsyncClient
+    from app.core.exceptions import register_exception_handlers
+    from app.api.routes.knowledge import router
+
+    application = FastAPI()
+    register_exception_handlers(application)
+    application.include_router(router)
+
+    async with AsyncClient(transport=ASGITransport(app=application), base_url="http://test") as ac:
+        resp = await ac.post("/api/knowledge/search", json={"query": "预约规则"})
+
+    assert resp.status_code == 401
+    body = resp.json()
+    assert body["code"] == 401
+    assert "登录" in body["message"]
+
+
+@pytest.mark.parametrize("top_k", [0, 11])
+async def test_route_rejects_top_k_out_of_range(api, client, top_k):
+    resp = await client.post("/api/knowledge/search", json={"query": "预约规则", "topK": top_k})
+
+    assert resp.status_code == 422
+    body = resp.json()
+    assert body["code"] == 422
+    assert "topK" in body["message"]
+
+
+async def test_route_uses_default_top_k_when_omitted(api, client):
+    service = StubSearchService([HIT])
+    api.dependency_overrides[get_knowledge_service] = lambda: service
+
+    resp = await client.post("/api/knowledge/search", json={"query": "预约规则"})
+
+    assert resp.status_code == 200
+    assert service.calls == [("预约规则", None)]
+
+
+async def test_search_treats_zero_top_k_as_explicit():
+    store = FakeStore()
+    service = KnowledgeService(
+        embedder=FakeEmbedder(), store=store, settings=Settings(kb_top_k=7, kb_min_similarity=0.2)
+    )
+
+    await service.search("预约规则", top_k=0)
+
+    assert store.last_query == (0, 0.2)
