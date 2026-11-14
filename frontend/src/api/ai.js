@@ -10,7 +10,10 @@ export function chatWithAi(payload) {
 }
 
 /**
- * 流式对话：解析后端 SSE（event: token/tool_call/tool/error/done）。
+ * 流式对话：解析后端 SSE（event: token/tool_call/tool/booking_card/error/done）。
+ *
+ * booking_card 事件的 data.card 是可直接渲染的预约单，点卡片上的「确认预约」
+ * 才会真正创建预约（走 POST /api/bookings）。
  *
  * @param {object} options
  * @param {string} options.message 用户本轮输入

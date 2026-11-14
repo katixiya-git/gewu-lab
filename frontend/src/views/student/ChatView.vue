@@ -2,6 +2,7 @@
 import { nextTick, onBeforeUnmount, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { streamChat } from '@/api/ai'
+import BookingCard from '@/components/booking/BookingCard.vue'
 
 const WELCOME = '你好，我是格物实验室助手。你可以直接问我实验室、设备、空档与预约规则，我会查完再回答。'
 const SESSION_KEY = 'gewu:ai:session'
@@ -14,6 +15,7 @@ const TOOL_LABELS = {
   find_free_slots: '空闲时段',
   list_my_bookings: '我的预约',
   validate_booking_draft: '预约草稿校验',
+  propose_booking: '预约单',
   search_knowledge: '知识库'
 }
 
@@ -75,6 +77,10 @@ async function send() {
         } else if (event === 'tool_call') {
           placeholder.tools = data.names || []
           scrollToBottom()
+        } else if (event === 'booking_card' && data.card) {
+          // 卡片挂在本轮助手消息上，和文字回答一起渲染（不单独起气泡）
+          placeholder.card = data.card
+          scrollToBottom()
         } else if (event === 'error') {
           placeholder.content = placeholder.content || `抱歉，我这边暂时没能回答：${data.message || '请稍后再试'}`
           ElMessage.error(data.message || '对话失败，请稍后再试')
@@ -119,11 +125,14 @@ onBeforeUnmount(() => {
 
     <div ref="listRef" class="chat-list">
       <div v-for="(msg, index) in messages" :key="index" class="msg" :class="msg.role">
-        <div class="bubble" :class="{ 'bubble--pending': msg.pending }">
-          <span v-if="msg.pending && !msg.content" class="typing">
-            {{ toolHint(msg.tools) }}<span>.</span><span>.</span><span>.</span>
-          </span>
-          <span v-else>{{ msg.content }}</span>
+        <div class="msg-body">
+          <div v-if="msg.content || msg.pending" class="bubble" :class="{ 'bubble--pending': msg.pending }">
+            <span v-if="msg.pending && !msg.content" class="typing">
+              {{ toolHint(msg.tools) }}<span>.</span><span>.</span><span>.</span>
+            </span>
+            <span v-else>{{ msg.content }}</span>
+          </div>
+          <BookingCard v-if="msg.card" :card="msg.card" />
         </div>
       </div>
     </div>
@@ -184,8 +193,16 @@ onBeforeUnmount(() => {
   justify-content: flex-end;
 }
 
-.bubble {
+/* 气泡 + 留言里的预约卡片共用一个宽度上限，卡片才不会撑满整行 */
+.msg-body {
+  display: flex;
+  flex-direction: column;
   max-width: 72%;
+}
+
+.bubble {
+  max-width: 100%;
+  width: fit-content;
   padding: 10px 14px;
   border-radius: 8px;
   background: #f5f7fa;
