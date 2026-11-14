@@ -2,8 +2,11 @@ r"""离线建知识库：读 docs/knowledge/*.md → 切块 → embedding → Re
 
 用法（在 backend 下）：
 
-    python -m scripts.build_kb --rebuild
     python -m scripts.build_kb --dry-run
+    python -m scripts.build_kb
+
+每次都会全量重建索引（先 drop 再写入），语料只有几十块，几秒完成；
+`--rebuild` 仅为兼容旧命令保留，语义与默认一致。
 """
 
 from __future__ import annotations
@@ -24,11 +27,13 @@ from app.knowledge.store import RedisKbStore
 def load_docs(docs_path: Path) -> list[tuple[str, str, str]]:
     """读取语料目录下全部 .md，返回 (doc_id, 标题, 正文)。
 
-    doc_id 用文件名（不含扩展名），保证稳定、可增量重建；标题优先取正文
-    第一个一级标题，没有一级标题时退回文件名。
+    doc_id 用文件名（不含扩展名），保证稳定；标题优先取正文第一个一级标题，
+    没有一级标题时退回文件名。README.md 是目录说明、不是业务语料，跳过。
     """
     docs: list[tuple[str, str, str]] = []
     for path in sorted(docs_path.glob("*.md")):
+        if path.name.lower() == "readme.md":
+            continue
         text = path.read_text(encoding="utf-8")
         title = path.stem
         for line in text.splitlines():
@@ -74,13 +79,13 @@ async def run(args: argparse.Namespace) -> None:
         dim=settings.kb_embedding_dim,
     )
     try:
-        if args.rebuild:
-            await store.reset()
+        # 全量重建：先删旧索引，避免语料改短后残留旧块
+        await store.reset()
         started = time.perf_counter()
         written = await store.upsert(all_chunks, vectors)
         print(
             f"写入 {written} 块，{time.perf_counter() - started:.1f}s，"
-            f"索引 {settings.kb_index_name} 当前 {await store.count()} 篇"
+            f"索引 {settings.kb_index_name} 当前 {await store.count()} 块"
         )
     finally:
         await client.aclose()
@@ -88,7 +93,7 @@ async def run(args: argparse.Namespace) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="离线构建格物知识库向量索引")
-    parser.add_argument("--rebuild", action="store_true", help="先删除旧索引与数据")
+    parser.add_argument("--rebuild", action="store_true", help="兼容保留：当前总是全量重建")
     parser.add_argument("--dry-run", action="store_true", help="只切块统计，不调用模型")
     asyncio.run(run(parser.parse_args()))
 

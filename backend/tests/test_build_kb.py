@@ -20,3 +20,12 @@ def test_load_docs_falls_back_to_stem(tmp_path):
 
     assert docs[0][0] == "no-title"
     assert docs[0][1] == "no-title"
+
+
+def test_load_docs_skips_readme(tmp_path):
+    (tmp_path / "README.md").write_text("# 语料说明\n\n这只是一份索引。\n", encoding="utf-8")
+    (tmp_path / "faq.md").write_text("# 常见问题\n\n正文\n", encoding="utf-8")
+
+    docs = load_docs(tmp_path)
+
+    assert [doc_id for doc_id, _, _ in docs] == ["faq"]
