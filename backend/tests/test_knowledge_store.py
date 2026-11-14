@@ -21,7 +21,7 @@ async def store():
     s = RedisKbStore(client=client, index_name="idx:gewu_test", prefix="gewu:test:", dim=1024)
     await s.reset()
     yield s
-    await s.reset()
+    await s.drop()
     await client.aclose()
 
 

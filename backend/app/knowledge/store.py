@@ -49,12 +49,16 @@ class RedisKbStore:
             raise
 
     async def reset(self) -> None:
+        await self.drop()
+        await self.ensure_index()
+
+    async def drop(self) -> None:
+        """删除索引及索引下的文档；索引不存在时静默通过。"""
         try:
             await self.client.execute_command("FT.DROPINDEX", self.index_name, "DD")
         except Exception as exc:  # noqa: BLE001
             if not _is_missing_index(exc):
                 raise
-        await self.ensure_index()
 
     # ---- 写入 ----
     async def upsert(self, chunks: list[Chunk], vectors: list[list[float]]) -> int:
