@@ -97,33 +97,48 @@ def _split_body(body: str, chunk_size: int, overlap: int) -> list[str]:
     blocks = _blocks(body)
     pieces: list[str] = []
     buffer = ""
+
+    def flush() -> None:
+        nonlocal buffer
+        if buffer.strip():
+            pieces.append(buffer.strip())
+        buffer = ""
+
     for block in blocks:
         atomic = block.startswith("|") or block.startswith("```")
-        if atomic and len(block) >= chunk_size:
-            if buffer:
-                pieces.append(buffer)
-                buffer = ""
-            pieces.append(block)
+        if atomic:
+            # 原子块永远独立成块：既不在它前面拼正文，也不让 overlap 尾巴
+            # 落进来（否则表格/代码会被拦腰切断或复制出残片）。
+            flush()
+            pieces.append(block.strip())
             continue
+
         candidate = f"{buffer}\n\n{block}".strip() if buffer else block
         if len(candidate) <= chunk_size:
             buffer = candidate
             continue
-        if buffer:
-            pieces.append(buffer)
-            buffer = (_tail(buffer, overlap) + "\n\n" + block).strip()
+
+        flush()
+        if pieces and not _is_atomic(pieces[-1]):
+            buffer = (_tail(pieces[-1], overlap) + "\n\n" + block).strip()
         else:
             buffer = block
         if len(buffer) > chunk_size:
             hard = _hard_split(buffer, chunk_size, overlap)
             pieces.extend(hard[:-1])
             buffer = hard[-1]
+
     if buffer.strip():
-        if pieces and len(buffer) < MIN_CHUNK:
+        if pieces and len(buffer) < MIN_CHUNK and not _is_atomic(pieces[-1]):
             pieces[-1] = f"{pieces[-1]}\n\n{buffer}".strip()
         else:
-            pieces.append(buffer)
+            pieces.append(buffer.strip())
     return pieces
+
+
+def _is_atomic(text: str) -> bool:
+    stripped = text.lstrip()
+    return stripped.startswith("|") or stripped.startswith("```")
 
 
 def _blocks(body: str) -> list[str]:

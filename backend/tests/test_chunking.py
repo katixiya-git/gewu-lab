@@ -50,6 +50,28 @@ def test_empty_document_returns_no_chunks():
     assert parse_markdown("", doc_id="empty", doc_title="空") == []
 
 
+def test_table_stays_intact_between_paragraphs():
+    rows = ["| 设备 | 数量 |", "| --- | --- |"] + [f"| 设备{i} | {i} |" for i in range(30)]
+    table = "\n".join(rows)
+    md = "## 清单\n\n" + "这是一段说明文字。" * 5 + "\n\n" + table + "\n\n" + "后续说明。" * 40
+    chunks = parse_markdown(md, doc_id="t", doc_title="清单")
+    table_chunks = [c for c in chunks if "| 设备0 |" in c.content]
+    assert len(table_chunks) == 1
+    assert "设备29" in table_chunks[0].content
+    assert table_chunks[0].content.lstrip().startswith("|")
+    assert sum("设备29" in c.content for c in chunks) == 1
+
+
+def test_code_fence_stays_intact_between_paragraphs():
+    code = "```python\n" + "\n".join(f"print({i})" for i in range(20)) + "\n```"
+    md = "## 示例\n\n" + "说明文字。" * 40 + "\n\n" + code + "\n\n" + "结尾说明。" * 40
+    chunks = parse_markdown(md, doc_id="c", doc_title="示例")
+    code_chunks = [c for c in chunks if "print(19)" in c.content]
+    assert len(code_chunks) == 1
+    assert code_chunks[0].content.lstrip().startswith("```")
+    assert "print(0)" in code_chunks[0].content
+
+
 def test_chunk_ids_are_stable():
     md = "## 一\n\n内容一。\n\n## 二\n\n内容二。"
     a = parse_markdown(md, doc_id="doc", doc_title="文档")
