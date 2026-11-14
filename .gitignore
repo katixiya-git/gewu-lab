@@ -21,3 +21,4 @@ npm-debug.log*
 
 # SDD 本地工作目录
 .superpowers/
+/backend/pytest-of-*/
