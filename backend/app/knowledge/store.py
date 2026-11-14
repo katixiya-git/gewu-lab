@@ -100,7 +100,7 @@ class RedisKbStore:
         reply = await self.client.execute_command(
             "FT.SEARCH", self.index_name,
             "*=>[KNN $k @embedding $vec AS score]",
-            "PARAMS", "2", "k", str(top_k), "vec", _pack(vector),
+            "PARAMS", "4", "k", str(top_k), "vec", _pack(vector),
             "SORTBY", "score",
             "LIMIT", "0", str(top_k),
             "RETURN", "5", "doc_id", "doc_title", "section", "content", "score",
