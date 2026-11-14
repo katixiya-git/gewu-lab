@@ -14,7 +14,9 @@ python-multipart==0.0.20
 
 # 知识库：Redis Stack 向量检索 + 百炼 embedding
 redis==6.4.0
-openai==1.109.1
+# 注意：langchain-openai 1.8.0 要求 openai>=2.45.0，此处不能降到 1.x，
+# 否则 pip 解析时会报「这些包版本冲突」直接装不上。
+openai==3.51.0
 
 # AI 编排：LangGraph 多轮图 + Redis checkpoint（复用同一 Redis）
 langchain==1.5.0
