@@ -1,44 +1,14 @@
 <script setup>
 import { nextTick, ref } from 'vue'
 import { ElMessage } from 'element-plus'
+import { chatWithAi } from '@/api/ai'
 
-const draft = {
-  labName: '人工智能实验室',
-  date: '2026-11-05',
-  start: '14:00',
-  end: '16:00',
-  people: 6,
-  type: '小组',
-  devices: ['GPU 服务器', '深度学习工作站'],
-  purpose: '课程项目模型训练'
-}
+const WELCOME = '你好，我是格物实验室助手。你可以问我预约流程，或让我介绍怎么查实验室和设备。'
 
-const messages = ref([
-  {
-    role: 'assistant',
-    type: 'text',
-    content: '你好，我是格物实验室助手。告诉我你想约哪间实验室、什么时间、多少人、需要什么设备，我来帮你查。'
-  },
-  {
-    role: 'user',
-    type: 'text',
-    content: '明天下午 2 点到 4 点，6 个人，要用 GPU 服务器训练模型。'
-  },
-  {
-    role: 'assistant',
-    type: 'text',
-    content: '查到人工智能实验室该时段空闲，且满足 6 人 + GPU 服务器的要求，帮你生成了这份预约方案：'
-  },
-  {
-    role: 'assistant',
-    type: 'card',
-    booking: draft
-  }
-])
-
+const messages = ref([{ role: 'assistant', type: 'text', content: WELCOME }])
 const input = ref('')
+const sending = ref(false)
 const listRef = ref(null)
-const confirmed = ref(false)
 
 async function scrollToBottom() {
   await nextTick()
@@ -48,27 +18,39 @@ async function scrollToBottom() {
 
 async function send() {
   const text = input.value.trim()
-  if (!text) return
+  if (!text || sending.value) return
 
   messages.value.push({ role: 'user', type: 'text', content: text })
   input.value = ''
+  sending.value = true
+
+  const placeholder = { role: 'assistant', type: 'text', content: '', pending: true }
+  const history = messages.value
+    .slice(0, -1)
+    .filter((m) => m.type === 'text' && m.content)
+    .slice(-20)
+    .map((m) => ({ role: m.role, content: m.content }))
+  messages.value.push(placeholder)
   await scrollToBottom()
 
-  messages.value.push({
-    role: 'assistant',
-    type: 'text',
-    content: '（对话接口尚未接入，这里之后会返回校验结果和新的预约方案。）'
-  })
-  await scrollToBottom()
+  try {
+    const data = await chatWithAi({ message: text, history })
+    placeholder.content = data.reply
+  } catch (error) {
+    placeholder.content = `抱歉，我这边暂时没能回答：${error?.message || '请稍后再试'}`
+    ElMessage.error('对话失败，请稍后再试')
+  } finally {
+    placeholder.pending = false
+    sending.value = false
+    await scrollToBottom()
+  }
 }
 
-function confirmBooking() {
-  confirmed.value = true
-  ElMessage.success('预约已提交，等待管理员审核（演示数据，不落库）')
-}
-
-function editBooking() {
-  input.value = '我想调整一下时间：'
+function onKeydown(event) {
+  if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+    event.preventDefault()
+    send()
+  }
 }
 </script>
 
@@ -76,30 +58,9 @@ function editBooking() {
   <section class="chat-page">
     <div ref="listRef" class="chat-list">
       <div v-for="(msg, index) in messages" :key="index" class="msg" :class="msg.role">
-        <div v-if="msg.type === 'text'" class="bubble">{{ msg.content }}</div>
-
-        <div v-else class="booking-card">
-          <div class="booking-card__head">
-            <span class="booking-card__title">预约方案</span>
-            <el-tag size="small" type="warning">待确认</el-tag>
-          </div>
-
-          <div class="booking-card__grid">
-            <span class="label">实验室</span><span>{{ msg.booking.labName }}</span>
-            <span class="label">时间</span>
-            <span>{{ msg.booking.date }} {{ msg.booking.start }} - {{ msg.booking.end }}</span>
-            <span class="label">人数 / 类型</span>
-            <span>{{ msg.booking.people }} 人 · {{ msg.booking.type }}</span>
-            <span class="label">设备</span><span>{{ msg.booking.devices.join('、') }}</span>
-            <span class="label">用途</span><span>{{ msg.booking.purpose }}</span>
-          </div>
-
-          <div class="booking-card__actions">
-            <el-button :disabled="confirmed" type="primary" @click="confirmBooking">
-              {{ confirmed ? '已确认' : '确认创建' }}
-            </el-button>
-            <el-button @click="editBooking">继续修改</el-button>
-          </div>
+        <div class="bubble" :class="{ 'bubble--pending': msg.pending }">
+          <span v-if="msg.pending" class="typing">正在思考<span>.</span><span>.</span><span>.</span></span>
+          <span v-else>{{ msg.content }}</span>
         </div>
       </div>
     </div>
@@ -110,10 +71,11 @@ function editBooking() {
         type="textarea"
         :rows="2"
         resize="none"
-        placeholder="例如：明天下午想用有 GPU 的实验室，6 个人，两小时"
-        @keydown.enter.exact.prevent="send"
+        :disabled="sending"
+        placeholder="例如：预约流程是什么？怎么查看实验室开放时间？"
+        @keydown="onKeydown"
       />
-      <el-button type="primary" @click="send">发送</el-button>
+      <el-button type="primary" :loading="sending" @click="send">发送</el-button>
     </div>
   </section>
 </template>
@@ -152,8 +114,9 @@ function editBooking() {
   border-radius: 8px;
   background: #f5f7fa;
   color: #303133;
-  line-height: 1.6;
+  line-height: 1.7;
   white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .msg.user .bubble {
@@ -161,44 +124,29 @@ function editBooking() {
   color: #fff;
 }
 
-.booking-card {
-  width: 420px;
-  padding: 14px 16px;
-  border: 1px solid #d9ecff;
-  border-radius: 8px;
-  background: #f4f9ff;
-}
-
-.booking-card__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 10px;
-}
-
-.booking-card__title {
-  font-size: 14px;
-  font-weight: 600;
-  color: #303133;
-}
-
-.booking-card__grid {
-  display: grid;
-  grid-template-columns: 76px 1fr;
-  gap: 6px 8px;
-  font-size: 13px;
-  line-height: 1.6;
-  color: #303133;
-}
-
-.booking-card__grid .label {
+.bubble--pending {
   color: #909399;
 }
 
-.booking-card__actions {
-  display: flex;
-  gap: 8px;
-  margin-top: 14px;
+.typing span {
+  animation: blink 1.2s infinite;
+}
+
+.typing span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.typing span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes blink {
+  0%, 60%, 100% {
+    opacity: 0.2;
+  }
+  30% {
+    opacity: 1;
+  }
 }
 
 .composer {
