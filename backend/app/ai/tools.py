@@ -1,12 +1,14 @@
-"""AI 助手的只读工具集。
+"""AI 助手的工具集。
 
-把「查实验室 / 查设备 / 查空档 / 查我的预约 / 校验预约草稿」封装成不依赖
-LangGraph 的异步函数与 OpenAI function-calling 描述，agent 图直接绑定这些工具。
+把「查实验室 / 查设备 / 查空档 / 查我的预约 / 校验预约草稿 / 生成预约卡片」
+封装成不依赖 LangGraph 的异步函数与 OpenAI function-calling 描述，
+agent 图直接绑定这些工具。
 
 约定：
 - 所有函数第一个参数是 ``AsyncSession``，第二类是业务参数；
 - 返回纯 dict/list，字段用 camelCase，方便直接塞进模型上下文或 SSE 事件；
-- 不写数据库：创建预约仍走 ``BookingService.create``，这里只做校验与草稿。
+- 不写数据库：``propose_booking`` 只校验并组装卡片，真正创建仍由用户点
+  「确认预约」后走 ``BookingService.create``，AI 不替用户落库。
 """
 
 from datetime import date, datetime, time, timedelta
@@ -15,7 +17,7 @@ from typing import Any
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Booking, BookingDevice, Device, Lab
+from app.models import Booking, BookingDevice, Device, Lab, User
 from app.services.booking_rules import (
     MAX_DURATION_MINUTES,
     MIN_DURATION_MINUTES,
@@ -32,6 +34,7 @@ ACTIVE_STATUSES = ("pending", "approved", "conflict")
 # 中文标签，模型回答时直接可用
 CATEGORY_LABELS = {"ai": "人工智能", "robot": "机器人", "cloud": "云计算", "se": "软件工程"}
 STATUS_LABELS = {"pending": "待审核", "approved": "已通过", "rejected": "已驳回", "conflict": "冲突待协调", "cancelled": "已取消"}
+BOOKING_TYPE_LABELS = {"personal": "个人", "group": "小组", "class": "班级"}
 
 
 def _hm(moment: time) -> str:
@@ -304,6 +307,80 @@ async def validate_booking_draft(
         "deviceNames": [device.name for device in devices],
     }
     return {"ok": not errors, "errors": errors, "conflict": conflict, "draft": draft}
+
+
+async def propose_booking(
+    session: AsyncSession,
+    user_id: int,
+    lab_id: int,
+    booking_date: date,
+    start_time: time,
+    end_time: time,
+    people_count: int,
+    booking_type: str = "personal",
+    purpose: str | None = None,
+    device_ids: list[int] | None = None,
+) -> dict[str, Any]:
+    """生成一张「待用户确认」的预约卡片，仍然不写库。
+
+    先按与正式创建完全相同的规则校验草稿（复用 ``validate_booking_draft``），
+    通过后用当前账号补上联系人信息，拼成前端可以直接渲染的卡片。
+    真正的创建发生在用户点卡片上的「确认预约」之后，由前端调用
+    ``POST /api/bookings`` 完成——AI 只负责把预约准备到位，不替用户落库。
+
+    Args:
+        session: 数据库会话。
+        user_id: 当前登录用户 id。
+        lab_id: 实验室 id。
+        booking_date: 预约日期。
+        start_time: 开始时间。
+        end_time: 结束时间。
+        people_count: 人数。
+        booking_type: 预约类型：personal / group / class，默认 personal。
+        purpose: 用途说明，可空。
+        device_ids: 需要的设备 id 列表。
+
+    Returns:
+        ``{"ok": bool, "errors": [...], "conflict": bool, "card": {...} | None}``；
+        ``card`` 用 camelCase，字段与 ``BookingCreateRequest`` 对齐，可直接提交。
+        ``conflict=True`` 表示与别人的已通过预约撞车，提交后会进入「冲突待协调」。
+    """
+    user = await session.get(User, user_id)
+    if user is None:
+        return {"ok": False, "errors": ["当前账号不存在，请重新登录"], "conflict": False, "card": None}
+
+    checked = await validate_booking_draft(
+        session,
+        user_id,
+        lab_id,
+        booking_date,
+        start_time,
+        end_time,
+        people_count,
+        device_ids,
+    )
+    if not checked["ok"]:
+        return {"ok": False, "errors": checked["errors"], "conflict": False, "card": None}
+
+    phone = (user.phone or "").strip()
+    if not 6 <= len(phone) <= 20:
+        return {
+            "ok": False,
+            "errors": ["账号还没有填写联系电话，请先在个人资料里补充手机号，再来预约"],
+            "conflict": False,
+            "card": None,
+        }
+
+    kind = booking_type if booking_type in BOOKING_TYPE_LABELS else "personal"
+    card = {
+        **checked["draft"],
+        "bookingType": kind,
+        "bookingTypeText": BOOKING_TYPE_LABELS[kind],
+        "purpose": (purpose or "").strip()[:255],
+        "contactName": user.name,
+        "contactPhone": phone,
+    }
+    return {"ok": True, "errors": [], "conflict": checked["conflict"], "card": card}
 
 
 async def search_knowledge(query: str, top_k: int = 3) -> list[dict[str, Any]]:

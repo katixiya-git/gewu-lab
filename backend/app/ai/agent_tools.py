@@ -121,6 +121,49 @@ async def validate_booking_draft(
 
 
 @tool
+async def propose_booking(
+    lab_id: int,
+    day: str,
+    start: str,
+    end: str,
+    people_count: int,
+    config: RunnableConfig,
+    booking_type: str = "personal",
+    purpose: str | None = None,
+    device_ids: list[int] | None = None,
+) -> dict[str, Any]:
+    """生成一张预约卡片给用户确认（不会直接创建预约）。
+
+    用户明确要「预约 / 订 / 占个时段」时用这个工具：先按正式规则校验，
+    校验通过就返回一张卡片，前端会把它渲染成带「确认预约」按钮的预约单；
+    用户点按钮才真正创建，所以调用后不要声称预约已经创建成功。
+
+    Args:
+        lab_id: 实验室 id，先用 list_labs / get_lab 查清楚。
+        day: 日期，格式 ``YYYY-MM-DD``。
+        start: 开始时间，``HH:MM``，按 30 分钟对齐。
+        end: 结束时间，``HH:MM``，与开始时间间隔 30 分钟到 4 小时。
+        people_count: 人数，不能超过实验室容量。
+        booking_type: 预约类型：personal / group / class，默认 personal。
+        purpose: 用途说明，用户说了才填。
+        device_ids: 可选，需要的设备 id 列表。
+    """
+    async with SessionLocal() as session:
+        return await domain.propose_booking(
+            session,
+            _user_id(config),
+            lab_id,
+            date.fromisoformat(day),
+            time.fromisoformat(start),
+            time.fromisoformat(end),
+            people_count,
+            booking_type,
+            purpose,
+            device_ids,
+        )
+
+
+@tool
 async def search_knowledge(query: str, top_k: int = 3) -> list[dict[str, Any]]:
     """检索实验室知识库（使用手册/预约与取消规则/设备说明/安全规范）。
 
@@ -142,5 +185,6 @@ AGENT_TOOLS = [
     find_free_slots,
     list_my_bookings,
     validate_booking_draft,
+    propose_booking,
     search_knowledge,
 ]

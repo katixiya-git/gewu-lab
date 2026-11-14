@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -15,7 +16,10 @@ from redis.exceptions import RedisError
 
 from app.ai.client import AiNotConfiguredError
 from app.config import Settings, get_settings
-from app.schemas.ai import ChatReply, ChatUsage
+from app.schemas.ai import BookingCard, ChatReply, ChatUsage
+
+# 生成预约卡片的工具名：它成功返回时，本轮对话会多推一个 booking_card 事件
+BOOKING_TOOL = "propose_booking"
 
 # 初始化图时可能冒出来的「存储侧」异常，只有这些才映射成 502：
 # redis-py 的连接/超时错误、socket 层的 OSError，以及 redisvl 的索引与搜索错误。
@@ -44,6 +48,39 @@ def _text_of(message: Any) -> str:
         if isinstance(block, dict) and block.get("type") == "text":
             parts.append(block.get("text", ""))
     return "".join(parts)
+
+
+def _card_from_tool(message: ToolMessage) -> dict[str, Any] | None:
+    """从 ``propose_booking`` 的工具结果里取出预约卡片。
+
+    工具返回的是 ``{"ok", "errors", "conflict", "card"}``，LangGraph 把它
+    序列化成 JSON 字符串塞进 ``ToolMessage.content``。只有成功（``ok`` 为真）
+    的调用才产生卡片；校验不过或工具抛错时返回 None，让模型去转述原因。
+
+    Args:
+        message: 工具节点的消息。
+
+    Returns:
+        dict | None: 加上 ``conflict`` 标记的卡片数据，可直接下发前端。
+    """
+    if getattr(message, "name", None) != BOOKING_TOOL:
+        return None
+    if getattr(message, "status", "success") == "error":
+        return None
+
+    content = message.content
+    if not isinstance(content, str):
+        return None
+    try:
+        payload = json.loads(content)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(payload, dict) or not payload.get("ok"):
+        return None
+    card = payload.get("card")
+    if not isinstance(card, dict):
+        return None
+    return {**card, "conflict": bool(payload.get("conflict"))}
 
 
 class AiService:
@@ -124,12 +161,18 @@ class AiService:
 
         tools: list[str] = []
         usage = ChatUsage()
+        card: dict[str, Any] | None = None
         for item in messages:
             if isinstance(item, AIMessage):
                 for call in item.tool_calls or []:
                     name = call.get("name")
                     if name:
                         tools.append(name)
+            elif isinstance(item, ToolMessage):
+                found = _card_from_tool(item)
+                if found:
+                    # 一轮里可能生成多张卡片（用户改了条件重来），只回最后一张
+                    card = found
             meta = getattr(item, "usage_metadata", None)
             if meta:
                 usage = ChatUsage(
@@ -144,6 +187,7 @@ class AiService:
             usage=usage,
             tools=tools,
             thread_id=thread_id,
+            booking_card=BookingCard.model_validate(card) if card else None,
         )
 
     async def stream_chat(
@@ -163,7 +207,8 @@ class AiService:
             session_id: 前端会话 id。
 
         Yields:
-            dict: ``token`` / ``tool_call`` / ``tool`` / ``error`` / ``done`` 事件。
+            dict: ``token`` / ``tool_call`` / ``tool`` / ``booking_card`` /
+            ``error`` / ``done`` 事件。
         """
         agent = await self._load_agent()
         thread_id = self.thread_id(user_id, session_id)
@@ -197,6 +242,10 @@ class AiService:
                                     "name": item.name,
                                     "ok": getattr(item, "status", "success") != "error",
                                 }
+                                card = _card_from_tool(item)
+                                if card:
+                                    # 卡片要能被路由层直接 json.dumps，这里只放纯 dict
+                                    yield {"type": "booking_card", "card": card}
         except (APITimeoutError, APIError):
             yield {"type": "error", "message": "模型调用超时或失败，请稍后重试"}
         except (RedisError, OSError):

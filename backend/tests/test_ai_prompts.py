@@ -13,10 +13,12 @@ def test_system_prompt_mentions_every_tool():
     assert missing == [], f"提示词没提到这些工具：{missing}"
 
 
-def test_system_prompt_forbids_direct_booking_creation():
-    """AI 只能校验草稿，不能声称已创建预约——这条是产品约束，必须留在提示词里。"""
-    assert "validate_booking_draft" in SYSTEM_PROMPT
-    assert "不能直接创建" in SYSTEM_PROMPT
+def test_system_prompt_requires_card_confirmation():
+    """预约走「生成卡片 → 用户点确认」两步——这个产品约束必须留在提示词里。"""
+    assert "propose_booking" in SYSTEM_PROMPT
+    assert "确认预约" in SYSTEM_PROMPT
+    # 旧版「AI 不能创建预约」的表述已被卡片流程取代，防止它偷偷回来
+    assert "不能直接创建" not in SYSTEM_PROMPT
 
 
 def test_render_system_prompt_without_context_returns_base():

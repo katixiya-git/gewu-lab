@@ -51,12 +51,13 @@ async def chat(
 
 # POST /api/ai/chat/stream AI 对话（SSE 流式）
 # 请求体同 /api/ai/chat；响应为 text/event-stream
-# 事件：token（增量文本）/ tool_call（准备调用哪些工具）/ tool（工具执行结果）/ error / done
+# 事件：token（增量文本）/ tool_call（准备调用哪些工具）/ tool（工具执行结果）
+#      / booking_card（预约卡片，data.card 是可直接渲染的预约单）/ error / done
 # 说明：先初始化图与 Redis，失败直接返回 JSON 错误（503/502），不进入半截流
 @router.post(
     "/chat/stream",
     summary="AI 对话（SSE 流式）",
-    description="发送一条消息，以 SSE 推送增量文本与工具调用状态；事件以 event: 行标注类型。",
+    description="发送一条消息，以 SSE 推送增量文本、工具调用状态与预约卡片；事件以 event: 行标注类型。",
     response_class=StreamingResponse,
 )
 async def chat_stream(

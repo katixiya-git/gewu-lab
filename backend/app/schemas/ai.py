@@ -1,5 +1,6 @@
 """AI 对话相关的请求 / 响应模型。"""
 
+from datetime import date
 from typing import Literal
 
 from pydantic import Field
@@ -38,6 +39,32 @@ class ChatUsage(CamelModel):
     total_tokens: int = 0
 
 
+class BookingCard(CamelModel):
+    """一张待用户确认的预约卡片。
+
+    模型调用 ``propose_booking`` 成功后由服务端下发给前端，字段与
+    ``BookingCreateRequest`` 对齐，点「确认预约」时原样提给 ``POST /api/bookings``。
+    """
+
+    lab_id: int = Field(description="实验室 id")
+    lab_name: str = Field(description="实验室名称")
+    booking_date: date = Field(description="预约日期")
+    start_time: str = Field(description="开始时间 HH:MM")
+    end_time: str = Field(description="结束时间 HH:MM")
+    people_count: int = Field(description="人数")
+    booking_type: str = Field(default="personal", description="personal / group / class")
+    booking_type_text: str = Field(default="", description="类型的中文文案")
+    purpose: str | None = Field(default=None, description="用途说明，可空")
+    contact_name: str = Field(description="联系人，取当前账号姓名")
+    contact_phone: str = Field(description="联系电话，取当前账号手机号")
+    device_ids: list[int] = Field(default_factory=list, description="需要的设备 id")
+    device_names: list[str] = Field(default_factory=list, description="设备名称，仅用于展示")
+    conflict: bool = Field(
+        default=False,
+        description="与其他人已通过的预约撞车时提交会落为「冲突待协调」",
+    )
+
+
 class ChatReply(CamelModel):
     """非流式对话的返回值。"""
 
@@ -46,14 +73,22 @@ class ChatReply(CamelModel):
     usage: ChatUsage = Field(default_factory=ChatUsage, description="token 用量")
     tools: list[str] = Field(default_factory=list, description="本轮调用过的工具名")
     thread_id: str = Field(description="会话 id，前端后续请求带上即可续聊")
+    booking_card: BookingCard | None = Field(
+        default=None,
+        description="本轮生成的预约卡片；没有则说明模型没走预约流程",
+    )
 
 
 class ChatStreamEvent(CamelModel):
-    """SSE 事件：token / tool_call / tool / error / done。"""
+    """SSE 事件：token / tool_call / tool / booking_card / error / done。"""
 
-    type: Literal["token", "tool_call", "tool", "error", "done"]
+    type: Literal["token", "tool_call", "tool", "booking_card", "error", "done"]
     content: str | None = None
     names: list[str] = Field(default_factory=list)
     name: str | None = None
     ok: bool | None = None
     message: str | None = None
+    card: BookingCard | None = Field(
+        default=None,
+        description="type=booking_card 时下发的预约卡片",
+    )
