@@ -3,7 +3,7 @@
 格物 · 实验室智能预约平台的后端服务，负责预约业务、LangGraph 对话编排与 Redis 向量检索。
 
 当前状态：账号、实验室、设备、预约、文件上传、知识库检索与 AI 对话（LangGraph + SSE）均已实现，
-`pytest` 49 passed / 3 skipped（跳过的 3 个需要 `GEWU_TEST_REDIS_URL` 指向真实 Redis Stack）。
+`pytest` 62 passed / 3 skipped（跳过的 3 个需要 `GEWU_TEST_REDIS_URL` 指向真实 Redis Stack）。
 
 ## 目录
 
@@ -67,10 +67,10 @@ AI 对话用百炼 qwen（OpenAI 兼容接口），会话状态（LangGraph chec
 | `AI_MODEL` | `qwen-plus` | 对话模型 |
 | `AI_TEMPERATURE` | `0.2` | 工具调用场景建议低温 |
 | `AI_TIMEOUT_SECONDS` | `60` | 单次模型请求超时 |
-| `AI_MAX_HISTORY_MESSAGES` | `20` | 每次请求最多携带的历史消息条数 |
-| `REDIS_URL` | `redis://127.0.0.1:6379/0` | Redis 地址；虚拟机 Redis Stack 用 `redis://your-redis-host:6379/0` |
+| `AI_MAX_HISTORY_MESSAGES` | `20` | 预留项：历史由 checkpoint 保管，当前代码未读取此值 |
+| `REDIS_URL` | `redis://127.0.0.1:6379/0` | Redis Stack 地址；必须是带 `search` 模块的 Redis Stack，索引只能建在 0 号库 |
 | `REDIS_PASSWORD` | 空 | 未设密码留空；设了密码会先 AUTH |
-| `AI_THREAD_TTL_SECONDS` | `86400` | 会话空闲过期时间（秒） |
+| `AI_THREAD_TTL_SECONDS` | `86400` | 预留项：未传给 checkpointer，会话存档不会自动过期，清理需手工删 `gewu:ai:*` |
 | `AI_CHECKPOINT_PREFIX` | `gewu:ai` | checkpoint key 前缀 |
 
 ### 文件上传配置

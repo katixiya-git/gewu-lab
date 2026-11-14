@@ -1,24 +1,43 @@
+# ---- 前端 ----
 node_modules/
 dist/
 dist-ssr/
 *.local
-.DS_Store
 
-# 编辑器
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+/backend/pip-*/
+/backend/pytest-of-*/
+
+# ---- 本地配置与运行数据（不入库）----
+.env
+.env.*
+!.env.example
+!*/.env.example
+uploads/
+data/
+logs/
+*.log
+npm-debug.log*
+
+# ---- 编辑器 / 系统 ----
 .idea/
+.vscode/
+.DS_Store
+Thumbs.db
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
 
-# 日志
-logs/
-*.log
-npm-debug.log*
-
-/backend/pip-*/
-
-# SDD 本地工作目录
+# ---- 内部过程文档（不对外发布）----
 .superpowers/
-/backend/pytest-of-*/
+docs/superpowers/

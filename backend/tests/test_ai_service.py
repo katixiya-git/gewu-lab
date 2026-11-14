@@ -28,7 +28,7 @@ def agent_raises(monkeypatch):
 
 
 async def test_redis_connection_error_maps_to_upstream_error(agent_raises):
-    agent_raises(RedisConnectionError("Error 111 connecting to your-redis-host:6379"))
+    agent_raises(RedisConnectionError("Error 111 connecting to 127.0.0.1:6379"))
 
     with pytest.raises(AiUpstreamError) as excinfo:
         await AiService()._load_agent()
