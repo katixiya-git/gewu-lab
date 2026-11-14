@@ -50,6 +50,24 @@ Copy-Item .env.example .env
 
 然后按需修改 `.env`：数据库连接、Redis 地址、模型 Key。`.env` 已被忽略，不要提交。
 
+### AI 与 Redis 配置
+
+AI 对话用百炼 qwen（OpenAI 兼容接口），会话状态（LangGraph checkpoint）存 Redis Stack：
+
+| 变量 | 默认 | 说明 |
+|---|---|---|
+| `AI_ENABLED` | `true` | 关闭后 `/api/ai/*` 返回 503，便于无 Key 环境跑业务测试 |
+| `AI_BASE_URL` | 百炼 compatible-mode 地址 | OpenAI 兼容接口根地址 |
+| `AI_API_KEY` | 空 | 百炼 API Key；留空时 `ai_ready=false` |
+| `AI_MODEL` | `qwen-plus` | 对话模型 |
+| `AI_TEMPERATURE` | `0.2` | 工具调用场景建议低温 |
+| `AI_TIMEOUT_SECONDS` | `60` | 单次模型请求超时 |
+| `AI_MAX_HISTORY_MESSAGES` | `20` | 每次请求最多携带的历史消息条数 |
+| `REDIS_URL` | `redis://127.0.0.1:6379/0` | Redis 地址；虚拟机 Redis Stack 用 `redis://your-redis-host:6379/0` |
+| `REDIS_PASSWORD` | 空 | 未设密码留空；设了密码会先 AUTH |
+| `AI_THREAD_TTL_SECONDS` | `86400` | 会话空闲过期时间（秒） |
+| `AI_CHECKPOINT_PREFIX` | `gewu:ai` | checkpoint key 前缀 |
+
 ## 启动（入口写好之后）
 
 ```powershell

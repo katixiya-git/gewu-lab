@@ -8,7 +8,7 @@ pydantic-settings 负责大小写不敏感映射；本地开发把值写在 ``ba
 from functools import lru_cache
 from urllib.parse import quote_plus
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -35,6 +35,28 @@ class Settings(BaseSettings):
     # upload_dir 相对 backend 运行目录；public 子目录直接静态托管
     upload_dir: str = "uploads"
     upload_max_mb: int = 20  # 单文件大小上限
+
+    # ---- AI 模型（百炼 qwen，OpenAI 兼容接口）----
+    # 关闭后 /api/ai/* 统一返回 503，便于没有 key 的环境跑业务测试
+    ai_enabled: bool = True
+    # 显式用 AI_ 前缀，避免误读系统里其它工具设置的 OPENAI_API_KEY
+    ai_api_key: str = ""
+    ai_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    ai_model: str = "qwen-plus"
+    # 工具调用场景要稳定，温度调低；范围 0~2
+    ai_temperature: float = Field(default=0.2, ge=0.0, le=2.0)
+    ai_timeout_seconds: int = 60
+    # 每次请求最多带多少条历史消息，防止上下文无限膨胀
+    ai_max_history_messages: int = 20
+
+    # ---- AI 会话状态（LangGraph checkpoint 存 Redis Stack）----
+    redis_url: str = "redis://127.0.0.1:6379/0"
+    # 为空表示 Redis 未设密码；有密码时客户端会先 AUTH
+    redis_password: str = ""
+    # 会话空闲多久后过期（秒），默认 24 小时
+    ai_thread_ttl_seconds: int = 86400
+    # Redis 里 checkpoint 的 key 前缀，便于和业务缓存区分
+    ai_checkpoint_prefix: str = "gewu:ai"
 
     # 允许跨域的前端来源；环境变量 CORS_ORIGINS 可用逗号分隔覆盖
     cors_origins: list[str] = [
@@ -68,6 +90,14 @@ class Settings(BaseSettings):
             f"mysql+aiomysql://{self.db_user}:{password}"
             f"@{self.db_host}:{self.db_port}/{self.db_name}?charset=utf8mb4"
         )
+
+    @property
+    def ai_ready(self) -> bool:
+        """AI 是否可用：开关打开，且确实配置了 API Key。
+
+        路由层用它做快速失败，避免没配 key 时还把请求送进模型调用。
+        """
+        return self.ai_enabled and bool(self.ai_api_key.strip())
 
 
 @lru_cache
