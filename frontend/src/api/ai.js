@@ -1,5 +1,6 @@
 import http from './request'
 import { getToken } from '@/utils/auth'
+import { parseSSEChunk } from './sse'
 
 /**
  * 与实验室助手对话（非流式，保留给脚本或调试用）。
@@ -10,7 +11,11 @@ export function chatWithAi(payload) {
 }
 
 /**
- * 流式对话：解析后端 SSE（event: token/tool_call/tool/booking_card/error/done）。
+ * 流式对话：解析后端 SSE。
+ *
+ * 事件（都带自增 seq，用于判断有没有漏收）：
+ *   user_message 回显本轮输入 / token 增量文本 / tool_call 准备调用哪些工具
+ *   / tool 工具执行结果 / booking_card 预约单 / error / done
  *
  * booking_card 事件的 data.card 是可直接渲染的预约单，点卡片上的「确认预约」
  * 才会真正创建预约（走 POST /api/bookings）。
@@ -48,29 +53,29 @@ export async function streamChat({ message, sessionId, onEvent, signal }) {
   const decoder = new TextDecoder('utf-8')
   let buffer = ''
 
+  /** 分发一批已完整的事件；单条解析失败不影响后续接收 */
+  function dispatch(events) {
+    for (const { event, data } of events) {
+      let payload
+      try {
+        payload = JSON.parse(data)
+      } catch {
+        continue
+      }
+      onEvent(event, payload)
+    }
+  }
+
   while (true) {
     const { done, value } = await reader.read()
     if (done) break
     buffer += decoder.decode(value, { stream: true })
-
-    let index = buffer.indexOf('\n\n')
-    while (index >= 0) {
-      const block = buffer.slice(0, index)
-      buffer = buffer.slice(index + 2)
-      index = buffer.indexOf('\n\n')
-
-      let event = 'message'
-      let data = ''
-      for (const line of block.split('\n')) {
-        if (line.startsWith('event:')) event = line.slice(6).trim()
-        else if (line.startsWith('data:')) data += line.slice(5).trim()
-      }
-      if (!data) continue
-      try {
-        onEvent(event, JSON.parse(data))
-      } catch {
-        // 单个事件解析失败不影响后续接收
-      }
-    }
+    const parsed = parseSSEChunk(buffer)
+    buffer = parsed.rest
+    dispatch(parsed.events)
   }
+
+  // 个别代理不发结尾空行，收流后把残留补一个空行再解一次，避免丢最后一帧
+  buffer += decoder.decode()
+  dispatch(parseSSEChunk(`${buffer}\n\n`).events)
 }

@@ -3,6 +3,7 @@ import { nextTick, onBeforeUnmount, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { streamChat } from '@/api/ai'
 import BookingCard from '@/components/booking/BookingCard.vue'
+import { applyEvent, confirmUserMessage, createAssistantMessage } from './chatEvents'
 
 const WELCOME = '你好，我是格物实验室助手。你可以直接问我实验室、设备、空档与预约规则，我会查完再回答。'
 const SESSION_KEY = 'gewu:ai:session'
@@ -59,37 +60,32 @@ async function send() {
   input.value = ''
   sending.value = true
 
-  const placeholder = { role: 'assistant', type: 'text', content: '', pending: true, tools: [] }
+  const placeholder = createAssistantMessage()
   messages.value.push(placeholder)
   await scrollToBottom()
 
   controller = new AbortController()
+  let stopped = false
   try {
     await streamChat({
       message: text,
       sessionId: sessionId.value,
       signal: controller.signal,
       onEvent(event, data) {
-        if (event === 'token') {
-          placeholder.content += data.content || ''
-          placeholder.pending = false
-          scrollToBottom()
-        } else if (event === 'tool_call') {
-          placeholder.tools = data.names || []
-          scrollToBottom()
-        } else if (event === 'booking_card' && data.card) {
-          // 卡片挂在本轮助手消息上，和文字回答一起渲染（不单独起气泡）
-          placeholder.card = data.card
-          scrollToBottom()
-        } else if (event === 'error') {
-          placeholder.content = placeholder.content || `抱歉，我这边暂时没能回答：${data.message || '请稍后再试'}`
-          ElMessage.error(data.message || '对话失败，请稍后再试')
-        } else if (event === 'done') {
-          placeholder.pending = false
+        // 每条事件都先过归约器：序号校验、文字累加、工具进度、卡片去重都在里面
+        const warning = applyEvent(placeholder, event, data)
+        if (warning) ElMessage.warning(warning)
+        if (event === 'user_message') {
+          confirmUserMessage(messages.value, data.content || '')
         }
+        if (event === 'error') {
+          ElMessage.error(placeholder.error || '对话失败，请稍后再试')
+        }
+        scrollToBottom()
       }
     })
   } catch (error) {
+    stopped = true
     if (error?.name === 'AbortError') {
       placeholder.content = placeholder.content || '（已取消）'
     } else {
@@ -97,6 +93,13 @@ async function send() {
       ElMessage.error('对话失败，请稍后再试')
     }
   } finally {
+    // 没收到 done 就结束了：多半是连接被掐断，保留已有文字并提示可重试
+    if (!placeholder.finished && !stopped) {
+      placeholder.content = placeholder.content
+        ? `${placeholder.content}\n（连接中断，请重试）`
+        : '（连接中断，请重试）'
+      ElMessage.warning('连接中断，请重试')
+    }
     placeholder.pending = false
     sending.value = false
     controller = null
@@ -132,7 +135,14 @@ onBeforeUnmount(() => {
             </span>
             <span v-else>{{ msg.content }}</span>
           </div>
-          <BookingCard v-if="msg.card" :card="msg.card" />
+          <BookingCard
+            v-for="item in msg.cards"
+            :key="item.key"
+            :card="item.card"
+            :pending="msg.pending"
+            :superseded="item.superseded"
+          />
+          <div v-if="msg.error" class="msg-error">{{ msg.error }}</div>
         </div>
       </div>
     </div>
@@ -219,6 +229,14 @@ onBeforeUnmount(() => {
 
 .bubble--pending {
   color: #909399;
+}
+
+/* 后端事件里带回来的错误（error 事件），用红色小字挂在气泡下面 */
+.msg-error {
+  margin-top: 6px;
+  color: #f56c6c;
+  font-size: 12px;
+  line-height: 1.6;
 }
 
 .typing span {

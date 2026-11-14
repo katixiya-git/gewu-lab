@@ -13,13 +13,19 @@ import { bookingTypeText, statusTagType, statusText } from '@/utils/booking'
  * 提交成功（含冲突待协调）后卡片原地变成结果态，不再允许重复提交。
  */
 const props = defineProps({
-  card: { type: Object, required: true }
+  card: { type: Object, required: true },
+  /** 本轮回复还在生成中（流未收到 done）：此时不允许提交，避免提交半截状态 */
+  pending: { type: Boolean, default: false },
+  /** 同一轮后来又生成了新卡片，这张已被取代 */
+  superseded: { type: Boolean, default: false }
 })
 
 const router = useRouter()
 const submitting = ref(false)
 const created = ref(null)
 const errorText = ref('')
+
+const locked = computed(() => props.superseded)
 
 const timeRange = computed(() => `${props.card.startTime}–${props.card.endTime}`)
 const typeText = computed(
@@ -30,7 +36,7 @@ const deviceText = computed(() =>
 )
 
 async function confirm() {
-  if (submitting.value || created.value) return
+  if (submitting.value || created.value || locked.value) return
   submitting.value = true
   errorText.value = ''
   try {
@@ -61,6 +67,7 @@ async function confirm() {
 }
 
 function goLab() {
+  if (locked.value) return
   router.push({ name: 'lab-detail', params: { id: props.card.labId } })
 }
 
@@ -70,10 +77,11 @@ function goBookings() {
 </script>
 
 <template>
-  <div class="booking-card" :class="{ 'booking-card--done': created }">
+  <div class="booking-card" :class="{ 'booking-card--done': created, 'booking-card--void': superseded }">
     <div class="booking-card__head">
       <span class="booking-card__title">{{ created ? '预约已提交' : '预约确认单' }}</span>
-      <el-tag v-if="created" :type="statusTagType(created.status)" size="small">
+      <el-tag v-if="superseded" type="info" size="small">已作废</el-tag>
+      <el-tag v-else-if="created" :type="statusTagType(created.status)" size="small">
         {{ statusText(created.status) }}
       </el-tag>
       <el-tag v-else type="info" size="small">{{ typeText }}</el-tag>
@@ -113,8 +121,11 @@ function goBookings() {
     <div class="booking-card__actions">
       <el-button v-if="created" type="primary" @click="goBookings">去我的预约</el-button>
       <template v-else>
-        <el-button type="primary" :loading="submitting" @click="confirm">确认预约</el-button>
-        <el-button :disabled="submitting" @click="goLab">去实验室详情页</el-button>
+        <el-button type="primary" :loading="submitting" :disabled="superseded || pending" @click="confirm">
+          确认预约
+        </el-button>
+        <el-button :disabled="submitting || superseded || pending" @click="goLab">去实验室详情页</el-button>
+        <span v-if="pending && !superseded" class="booking-card__hint">回复生成中，稍后可提交</span>
       </template>
     </div>
   </div>
@@ -132,6 +143,12 @@ function goBookings() {
 
 .booking-card--done {
   border-left-color: #67c23a;
+}
+
+/* 被同一轮的新卡片取代：整卡降透明度，按钮全部禁用 */
+.booking-card--void {
+  opacity: 0.6;
+  border-left-color: #c0c4cc;
 }
 
 .booking-card__head {
@@ -152,7 +169,13 @@ function goBookings() {
 
 .booking-card__actions {
   display: flex;
+  align-items: center;
   gap: 8px;
   margin-top: 12px;
+}
+
+.booking-card__hint {
+  color: #909399;
+  font-size: 12px;
 }
 </style>
