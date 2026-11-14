@@ -3,10 +3,12 @@
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from redis.exceptions import RedisError
 
 from app.api.deps import get_current_user, get_knowledge_service
 from app.core.result import Result
 from app.knowledge.embedding import EmbeddingError
+from app.knowledge.store import KbStoreError
 from app.schemas.knowledge import KnowledgeHitOut, KnowledgeSearchRequest
 from app.services.knowledge_service import IndexEmptyError, KnowledgeService
 
@@ -40,5 +42,10 @@ async def search_knowledge(
         logger.warning("知识库检索向量化失败：%s", exc)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY, detail="检索服务暂时不可用"
+        ) from exc
+    except (RedisError, KbStoreError) as exc:
+        logger.warning("知识库存储不可用：%s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="知识库暂时不可用，请稍后再试"
         ) from exc
     return Result.ok(hits)

@@ -287,3 +287,18 @@ async def test_search_treats_zero_top_k_as_explicit():
     await service.search("预约规则", top_k=0)
 
     assert store.last_query == (0, 0.2)
+
+
+async def test_route_redis_error_maps_to_503(api, client):
+    from redis.exceptions import ConnectionError as RedisConnectionError
+
+    api.dependency_overrides[get_knowledge_service] = lambda: StubSearchService(
+        error=RedisConnectionError("boom")
+    )
+
+    resp = await client.post("/api/knowledge/search", json={"query": "预约规则"})
+
+    assert resp.status_code == 503
+    body = resp.json()
+    assert body["code"] == 503
+    assert "知识库暂时不可用" in body["message"]

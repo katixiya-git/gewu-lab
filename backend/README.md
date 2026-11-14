@@ -75,6 +75,26 @@ AI 对话用百炼 qwen（OpenAI 兼容接口），会话状态（LangGraph chec
 uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
+## 知识库检索
+
+`docs/knowledge/` 下的 Markdown 语料会被切成 500 字左右的块，用百炼 `text-embedding-v3`
+生成 1024 维向量，写入 Redis Stack 的 HNSW 索引（只做向量检索，中文全文分词不可用）。
+
+```bash
+cd backend
+.\.venv\Scripts\python.exe -m scripts.build_kb --dry-run   # 只看切块结果，不联网
+.\.venv\Scripts\python.exe -m scripts.build_kb             # 全量重建索引
+.\.venv\Scripts\python.exe -m scripts.kb_smoke             # 5 个固定问题 + 延迟
+```
+
+需要配置 `REDIS_URL`（指向 Redis Stack 的 0 号库，索引不能建在其它库）、`REDIS_PASSWORD`
+（无密码留空）与 `DASHSCOPE_API_KEY`。接口：
+
+- `POST /api/knowledge/search`，body `{"query": "...", "topK": 3}`，返回
+  `{docId, docTitle, section, content, similarity}` 列表（需登录）。
+- `AI_ENABLED=false` 或未配置 Key → 503；索引为空 → 503（先跑 `scripts.build_kb`）；
+  向量化失败 → 502；Redis 不可达 → 503。
+
 ## 约定
 
 - 不提交 `.venv/`、`.env`、`data/`、`logs/`；
