@@ -1,162 +1,191 @@
-"""AI 对话业务：拼提示词、带历史消息调用模型，并把结果归一化。
+"""AI 对话业务：用 LangGraph 图编排「模型 ↔ 工具」循环。
 
-路由层只关心「拿到回复」或「拿到错误」，不直接接触 ``openai`` 的异常类型。
+路由层只负责鉴权、限流与把异常映射成 HTTP 状态码；
+这里负责真正跑图、收集 token 用量与工具调用记录。
 """
 
-from collections.abc import AsyncIterator, Sequence
-from datetime import datetime, timedelta, timezone
+from __future__ import annotations
 
-from openai import APIError, APITimeoutError, AsyncOpenAI
+from collections.abc import AsyncIterator
+from typing import Any
 
-from app.ai.client import AiNotConfiguredError, get_ai_client
-from app.ai.prompts import render_system_prompt
+from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, ToolMessage
+from openai import APIError, APITimeoutError
+from redis.exceptions import RedisError
+
+from app.ai.client import AiNotConfiguredError
 from app.config import Settings, get_settings
-from app.schemas.ai import ChatMessage, ChatReply, ChatUsage
-
-# 相对时间（「明天下午」）必须按用户所在时区换算。
-# 中国没有夏令时，用固定 UTC+8 即可，省掉 Windows 上缺失的 tzdata 依赖。
-SHANGHAI = timezone(timedelta(hours=8), name="CST")
-_WEEKDAYS = "一二三四五六日"
+from app.schemas.ai import ChatReply, ChatUsage
 
 
 class AiUpstreamError(RuntimeError):
-    """模型调用失败（超时、限流、上游 5xx 等），路由层映射成 502。"""
+    """模型或会话存储调用失败，路由层映射成 502。"""
+
+
+def _text_of(message: Any) -> str:
+    """从 LangChain 消息里取纯文本（兼容字符串与内容块列表两种形态）。"""
+    content = getattr(message, "content", "")
+    if isinstance(content, str):
+        return content
+    parts: list[str] = []
+    for block in content or []:
+        if isinstance(block, dict) and block.get("type") == "text":
+            parts.append(block.get("text", ""))
+    return "".join(parts)
 
 
 class AiService:
-    """对话服务：不持有请求级状态，可被并发复用。"""
+    """对话服务：无请求级状态，可被并发复用。"""
 
-    def __init__(
-        self,
-        settings: Settings | None = None,
-        client: AsyncOpenAI | None = None,
-    ) -> None:
+    def __init__(self, settings: Settings | None = None) -> None:
         """初始化服务。
 
         Args:
-            settings: 应用配置，默认从进程单例读取；测试时可注入。
-            client: 模型客户端，默认懒加载；测试时可注入假客户端。
+            settings: 应用配置，默认读取进程单例；测试时可注入。
         """
         self._settings = settings or get_settings()
-        self._client = client
 
-    @property
-    def client(self) -> AsyncOpenAI:
-        """懒加载模型客户端，避免没用到 AI 的请求也初始化连接池。"""
-        if self._client is None:
-            self._client = get_ai_client()
-        return self._client
+    def thread_id(self, user_id: int, session_id: str | None) -> str:
+        """把用户与会话拼成 checkpoint 的 thread_id。
 
-    def _build_messages(
-        self,
-        message: str,
-        history: Sequence[ChatMessage] = (),
-        user_name: str | None = None,
-    ) -> list[dict[str, str]]:
-        """把系统提示词、历史消息、本轮输入拼成 OpenAI 消息数组。
-
-        Args:
-            message: 用户本轮输入。
-            history: 历史消息（时间正序），只保留最近 N 条。
-            user_name: 当前用户姓名，用于让模型称呼用户。
-
-        Returns:
-            list[dict[str, str]]: 形如 ``{"role": ..., "content": ...}`` 的列表。
+        前端每个新对话生成一个 sessionId，同一个人开多个对话互不干扰。
         """
-        now = datetime.now(SHANGHAI)
-        context = f"当前时间：{now:%Y-%m-%d %H:%M}（周{_WEEKDAYS[now.weekday()]}）"
-        if user_name:
-            context = f"{context}\n当前用户：{user_name}"
+        return f"{self._settings.ai_checkpoint_prefix}:{user_id}:{session_id or 'default'}"
 
-        limit = self._settings.ai_max_history_messages
-        trimmed = list(history)[-limit:] if limit > 0 else []
+    def _config(self, user_id: int, user_name: str, thread_id: str) -> dict[str, Any]:
+        return {
+            "configurable": {"thread_id": thread_id, "user_id": user_id, "user_name": user_name},
+            "recursion_limit": 12,
+        }
 
-        return [
-            {"role": "system", "content": render_system_prompt(context)},
-            *[{"role": item.role, "content": item.content} for item in trimmed],
-            {"role": "user", "content": message},
-        ]
+    async def ensure_ready(self) -> None:
+        """提前初始化图与 checkpointer；失败时路由可以返回 503/502 而不是半截 SSE。"""
+        await self._load_agent()
+
+    async def _load_agent(self):
+        # 延迟导入：runtime -> graph -> agent_tools -> app.ai.tools -> app.services 会绕回来
+        from app.ai.runtime import get_agent
+
+        try:
+            return await get_agent()
+        except AiNotConfiguredError:
+            raise
+        except (RedisError, OSError) as exc:
+            raise AiUpstreamError("会话存储不可用，请稍后再试") from exc
 
     async def chat(
         self,
         message: str,
-        history: Sequence[ChatMessage] = (),
-        user_name: str | None = None,
+        *,
+        user_id: int,
+        user_name: str,
+        session_id: str | None = None,
     ) -> ChatReply:
-        """发起一次非流式对话。
+        """非流式对话：跑完整张图，返回最后一条回复。
 
         Args:
             message: 用户本轮输入。
-            history: 历史消息（时间正序）。
-            user_name: 当前用户姓名。
+            user_id: 当前登录用户 id（注入工具上下文）。
+            user_name: 当前用户姓名（写进系统提示）。
+            session_id: 前端会话 id；同一 id 共享多轮记忆。
 
         Returns:
-            ChatReply: 模型回复与 token 用量。
-
-        Raises:
-            AiNotConfiguredError: AI 未启用或未配置 Key。
-            AiUpstreamError: 模型调用超时、限流或其他上游错误。
+            ChatReply: 回复文本、模型名、token 用量、工具名与会话 id。
         """
-        if not self._settings.ai_ready:
-            raise AiNotConfiguredError("AI 未启用或未配置 API Key")
+        agent = await self._load_agent()
+        thread_id = self.thread_id(user_id, session_id)
 
         try:
-            response = await self.client.chat.completions.create(
-                model=self._settings.ai_model,
-                messages=self._build_messages(message, history, user_name),
-                temperature=self._settings.ai_temperature,
+            result = await agent.ainvoke(
+                {"messages": [HumanMessage(message)]},
+                config=self._config(user_id, user_name, thread_id),
             )
         except (APITimeoutError, APIError) as exc:
-            raise AiUpstreamError(f"模型调用失败：{exc}") from exc
+            raise AiUpstreamError("模型调用超时或失败，请稍后重试") from exc
+        except RedisError as exc:
+            raise AiUpstreamError("会话存储不可用，请稍后再试") from exc
 
-        choice = response.choices[0]
-        usage = response.usage
+        messages = result.get("messages", [])
+        reply = _text_of(messages[-1]) if messages else ""
+
+        tools: list[str] = []
+        usage = ChatUsage()
+        for item in messages:
+            if isinstance(item, AIMessage):
+                for call in item.tool_calls or []:
+                    name = call.get("name")
+                    if name:
+                        tools.append(name)
+            meta = getattr(item, "usage_metadata", None)
+            if meta:
+                usage = ChatUsage(
+                    prompt_tokens=usage.prompt_tokens + meta.get("input_tokens", 0),
+                    completion_tokens=usage.completion_tokens + meta.get("output_tokens", 0),
+                    total_tokens=usage.total_tokens + meta.get("total_tokens", 0),
+                )
+
         return ChatReply(
-            reply=choice.message.content or "",
-            model=response.model,
-            usage=ChatUsage(
-                prompt_tokens=usage.prompt_tokens if usage else 0,
-                completion_tokens=usage.completion_tokens if usage else 0,
-                total_tokens=usage.total_tokens if usage else 0,
-            ),
+            reply=reply,
+            model=self._settings.ai_model,
+            usage=usage,
+            tools=tools,
+            thread_id=thread_id,
         )
 
     async def stream_chat(
         self,
         message: str,
-        history: Sequence[ChatMessage] = (),
-        user_name: str | None = None,
-    ) -> AsyncIterator[str]:
-        """发起一次流式对话，逐段产出文本增量。
+        *,
+        user_id: int,
+        user_name: str,
+        session_id: str | None = None,
+    ) -> AsyncIterator[dict[str, Any]]:
+        """流式对话：逐 token 产出事件，同时广播工具调用状态。
 
         Args:
             message: 用户本轮输入。
-            history: 历史消息（时间正序）。
+            user_id: 当前登录用户 id。
             user_name: 当前用户姓名。
+            session_id: 前端会话 id。
 
         Yields:
-            str: 模型输出的文本片段（可能为空，调用方需跳过空片段）。
-
-        Raises:
-            AiNotConfiguredError: AI 未启用或未配置 API Key。
-            AiUpstreamError: 模型调用超时、限流或其他上游错误。
+            dict: ``token`` / ``tool_call`` / ``tool`` / ``error`` / ``done`` 事件。
         """
-        if not self._settings.ai_ready:
-            raise AiNotConfiguredError("AI 未启用或未配置 API Key")
+        agent = await self._load_agent()
+        thread_id = self.thread_id(user_id, session_id)
 
         try:
-            stream = await self.client.chat.completions.create(
-                model=self._settings.ai_model,
-                messages=self._build_messages(message, history, user_name),
-                temperature=self._settings.ai_temperature,
-                stream=True,
-            )
-            async for chunk in stream:
-                if not chunk.choices:
-                    continue
-                delta = chunk.choices[0].delta.content
-                # 有些分片只带 role/finish_reason，没有正文，跳过
-                if delta:
-                    yield delta
-        except (APITimeoutError, APIError) as exc:
-            raise AiUpstreamError(f"模型调用失败：{exc}") from exc
+            async for mode, payload in agent.astream(
+                {"messages": [HumanMessage(message)]},
+                config=self._config(user_id, user_name, thread_id),
+                stream_mode=["messages", "updates"],
+            ):
+                if mode == "messages":
+                    chunk, _meta = payload
+                    if isinstance(chunk, AIMessageChunk):
+                        text = _text_of(chunk)
+                        if text:
+                            yield {"type": "token", "content": text}
+                elif mode == "updates":
+                    for node, update in (payload or {}).items():
+                        if not isinstance(update, dict):
+                            continue
+                        for item in update.get("messages", []):
+                            if node == "agent" and isinstance(item, AIMessage) and item.tool_calls:
+                                names = [call.get("name") for call in item.tool_calls]
+                                yield {
+                                    "type": "tool_call",
+                                    "names": [name for name in names if name],
+                                }
+                            elif node == "tools" and isinstance(item, ToolMessage):
+                                yield {
+                                    "type": "tool",
+                                    "name": item.name,
+                                    "ok": getattr(item, "status", "success") != "error",
+                                }
+        except (APITimeoutError, APIError):
+            yield {"type": "error", "message": "模型调用超时或失败，请稍后重试"}
+        except (RedisError, OSError):
+            yield {"type": "error", "message": "会话存储不可用，请稍后再试"}
+
+        yield {"type": "done"}

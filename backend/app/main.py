@@ -13,6 +13,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+from app.ai.runtime import close_agent
 from app.api.routes import ai, auth, bookings, devices, files, knowledge, labs, users
 from app.config import get_settings
 from app.core.exceptions import register_exception_handlers
@@ -23,9 +24,10 @@ from app.db import close_db, init_db
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """应用生命周期：启动前连库自检，退出时释放连接池。"""
+    """应用生命周期：启动前连库自检，退出时释放连接池与 Agent 的 Redis 连接。"""
     await init_db()  # 启动自检：数据库可连接
     yield
+    await close_agent()  # 释放 AsyncRedisSaver 的连接
     await close_db()
 
 
