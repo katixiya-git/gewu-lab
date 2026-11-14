@@ -1,4 +1,4 @@
-# 开发工具，等写代码/写测试时再装
-# ruff
-# pytest
-# pytest-asyncio
+# 开发工具
+ruff
+pytest
+pytest-asyncio
