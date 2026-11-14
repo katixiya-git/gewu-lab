@@ -1,5 +1,6 @@
 """请求/响应模型包：统一导出，路由与服务层按需引用。"""
 
+from app.schemas.ai import ChatMessage, ChatReply, ChatRequest, ChatUsage
 from app.schemas.auth import (
     ChangePasswordRequest,
     LoginRequest,
@@ -40,6 +41,10 @@ from app.schemas.user import (
 )
 
 __all__ = [
+    "ChatMessage",
+    "ChatReply",
+    "ChatRequest",
+    "ChatUsage",
     "BookingCancelRequest",
     "BookingCancelReviewRequest",
     "BookingCreateRequest",

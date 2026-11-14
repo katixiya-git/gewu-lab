@@ -13,6 +13,7 @@ from app.core.security import decode_token
 from app.db import get_session
 from app.models import User
 from app.services import (
+    AiService,
     AuthService,
     BookingService,
     DeviceService,
@@ -114,3 +115,8 @@ def get_device_service(session: AsyncSession = Depends(get_session)) -> DeviceSe
 def get_booking_service(session: AsyncSession = Depends(get_session)) -> BookingService:
     """构建预约业务服务（每个请求一个实例）。"""
     return BookingService(session)
+
+
+def get_ai_service() -> AiService:
+    """构造 AI 对话服务（不依赖数据库会话，无状态）。"""
+    return AiService()

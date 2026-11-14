@@ -13,7 +13,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from app.api.routes import auth, bookings, devices, files, labs, users
+from app.api.routes import ai, auth, bookings, devices, files, labs, users
 from app.config import get_settings
 from app.core.exceptions import register_exception_handlers
 from app.core.result import Result
@@ -43,6 +43,7 @@ app.add_middleware(
 # 统一响应信封与全局异常处理：404/405/422/500 都返回 {code,message,data}
 register_exception_handlers(app)
 
+app.include_router(ai.router)
 app.include_router(auth.router)
 app.include_router(bookings.router)
 app.include_router(devices.router)
