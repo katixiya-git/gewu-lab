@@ -1,19 +1,52 @@
 <script setup>
-import { nextTick, ref } from 'vue'
+import { nextTick, onBeforeUnmount, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { chatWithAi } from '@/api/ai'
+import { streamChat } from '@/api/ai'
 
-const WELCOME = '你好，我是格物实验室助手。你可以问我预约流程，或让我介绍怎么查实验室和设备。'
+const WELCOME = '你好，我是格物实验室助手。你可以直接问我实验室、设备、空档与预约规则，我会查完再回答。'
+const SESSION_KEY = 'gewu:ai:session'
+
+/** 工具名 → 给用户看的动作文案 */
+const TOOL_LABELS = {
+  list_labs: '实验室列表',
+  get_lab: '实验室详情',
+  list_devices: '设备清单',
+  find_free_slots: '空闲时段',
+  list_my_bookings: '我的预约',
+  validate_booking_draft: '预约草稿校验',
+  search_knowledge: '知识库'
+}
+
+function newSessionId() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID()
+  return `s-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`
+}
+
+const sessionId = ref(sessionStorage.getItem(SESSION_KEY) || newSessionId())
+sessionStorage.setItem(SESSION_KEY, sessionId.value)
 
 const messages = ref([{ role: 'assistant', type: 'text', content: WELCOME }])
 const input = ref('')
 const sending = ref(false)
 const listRef = ref(null)
+let controller = null
 
 async function scrollToBottom() {
   await nextTick()
   const el = listRef.value
   if (el) el.scrollTop = el.scrollHeight
+}
+
+function toolHint(names) {
+  const labels = (names || []).map((name) => TOOL_LABELS[name] || name)
+  return labels.length ? `正在查询：${labels.join('、')}` : '正在思考'
+}
+
+function resetConversation() {
+  if (sending.value) return
+  sessionId.value = newSessionId()
+  sessionStorage.setItem(SESSION_KEY, sessionId.value)
+  messages.value = [{ role: 'assistant', type: 'text', content: WELCOME }]
 }
 
 async function send() {
@@ -24,24 +57,43 @@ async function send() {
   input.value = ''
   sending.value = true
 
-  const placeholder = { role: 'assistant', type: 'text', content: '', pending: true }
-  const history = messages.value
-    .slice(0, -1)
-    .filter((m) => m.type === 'text' && m.content)
-    .slice(-20)
-    .map((m) => ({ role: m.role, content: m.content }))
+  const placeholder = { role: 'assistant', type: 'text', content: '', pending: true, tools: [] }
   messages.value.push(placeholder)
   await scrollToBottom()
 
+  controller = new AbortController()
   try {
-    const data = await chatWithAi({ message: text, history })
-    placeholder.content = data.reply
+    await streamChat({
+      message: text,
+      sessionId: sessionId.value,
+      signal: controller.signal,
+      onEvent(event, data) {
+        if (event === 'token') {
+          placeholder.content += data.content || ''
+          placeholder.pending = false
+          scrollToBottom()
+        } else if (event === 'tool_call') {
+          placeholder.tools = data.names || []
+          scrollToBottom()
+        } else if (event === 'error') {
+          placeholder.content = placeholder.content || `抱歉，我这边暂时没能回答：${data.message || '请稍后再试'}`
+          ElMessage.error(data.message || '对话失败，请稍后再试')
+        } else if (event === 'done') {
+          placeholder.pending = false
+        }
+      }
+    })
   } catch (error) {
-    placeholder.content = `抱歉，我这边暂时没能回答：${error?.message || '请稍后再试'}`
-    ElMessage.error('对话失败，请稍后再试')
+    if (error?.name === 'AbortError') {
+      placeholder.content = placeholder.content || '（已取消）'
+    } else {
+      placeholder.content = placeholder.content || `抱歉，我这边暂时没能回答：${error?.message || '请稍后再试'}`
+      ElMessage.error('对话失败，请稍后再试')
+    }
   } finally {
     placeholder.pending = false
     sending.value = false
+    controller = null
     await scrollToBottom()
   }
 }
@@ -52,14 +104,25 @@ function onKeydown(event) {
     send()
   }
 }
+
+onBeforeUnmount(() => {
+  controller?.abort()
+})
 </script>
 
 <template>
   <section class="chat-page">
+    <div class="chat-head">
+      <span class="chat-title">实验室助手</span>
+      <el-button link type="primary" :disabled="sending" @click="resetConversation">新对话</el-button>
+    </div>
+
     <div ref="listRef" class="chat-list">
       <div v-for="(msg, index) in messages" :key="index" class="msg" :class="msg.role">
         <div class="bubble" :class="{ 'bubble--pending': msg.pending }">
-          <span v-if="msg.pending" class="typing">正在思考<span>.</span><span>.</span><span>.</span></span>
+          <span v-if="msg.pending && !msg.content" class="typing">
+            {{ toolHint(msg.tools) }}<span>.</span><span>.</span><span>.</span>
+          </span>
           <span v-else>{{ msg.content }}</span>
         </div>
       </div>
@@ -72,7 +135,7 @@ function onKeydown(event) {
         :rows="2"
         resize="none"
         :disabled="sending"
-        placeholder="例如：预约流程是什么？怎么查看实验室开放时间？"
+        placeholder="例如：明天下午人工智能实验室有空档吗？"
         @keydown="onKeydown"
       />
       <el-button type="primary" :loading="sending" @click="send">发送</el-button>
@@ -89,6 +152,19 @@ function onKeydown(event) {
   border: 1px solid #e4e7ed;
   border-radius: 8px;
   overflow: hidden;
+}
+
+.chat-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-bottom: 1px solid #f0f2f5;
+}
+
+.chat-title {
+  font-weight: 600;
+  color: #303133;
 }
 
 .chat-list {
