@@ -11,9 +11,11 @@ pyjwt==2.10.1
 # MySQL 8 默认 caching_sha2_password 认证需要；连库报 "cryptography is required" 时再加：
 # cryptography
 
-# 后续阶段再引入：
-# redis
-# langgraph
-# langchain-openai
+# 知识库与 AI
+redis==6.4.0
+openai==1.109.1
+langgraph
+langgraph-checkpoint
+langgraph-checkpoint-redis
 # httpx
 python-multipart==0.0.20
