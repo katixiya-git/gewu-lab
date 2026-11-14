@@ -17,6 +17,18 @@ from app.ai.client import AiNotConfiguredError
 from app.config import Settings, get_settings
 from app.schemas.ai import ChatReply, ChatUsage
 
+# 初始化图时可能冒出来的「存储侧」异常，只有这些才映射成 502：
+# redis-py 的连接/超时错误、socket 层的 OSError，以及 redisvl 的索引与搜索错误。
+# TypeError、ImportError 这类属于代码缺陷，继续冒泡成 500 并留下堆栈，
+# 免得把「图装配错了」伪装成「Redis 挂了」。
+_STORAGE_ERRORS: tuple[type[BaseException], ...] = (RedisError, OSError)
+try:  # redisvl 由 langgraph-checkpoint-redis 引入；万一没装就只按 redis / socket 判断
+    from redisvl.exceptions import RedisSearchError
+except ImportError:  # pragma: no cover - 正常依赖安装不会走到这里
+    pass
+else:
+    _STORAGE_ERRORS += (RedisSearchError,)
+
 
 class AiUpstreamError(RuntimeError):
     """模型或会话存储调用失败，路由层映射成 502。"""
@@ -70,7 +82,9 @@ class AiService:
             return await get_agent()
         except AiNotConfiguredError:
             raise
-        except (RedisError, OSError) as exc:
+        except _STORAGE_ERRORS as exc:
+            # 走到这里的都是 checkpointer / Redis 索引的初始化失败：
+            # 统一转成 502，避免把连接细节当 500 抛给前端。
             raise AiUpstreamError("会话存储不可用，请稍后再试") from exc
 
     async def chat(
