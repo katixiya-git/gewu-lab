@@ -1,6 +1,10 @@
 """AI 对话接口：非流式与 SSE 流式两种形态，内部都走 LangGraph 图。"""
 
+import asyncio
+import contextlib
 import json
+from collections.abc import AsyncIterator
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
@@ -12,6 +16,54 @@ from app.schemas.ai import ChatReply, ChatRequest
 from app.services.ai_service import AiNotConfiguredError, AiService, AiUpstreamError
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
+
+# 两条事件之间允许的最长静默秒数。工具调用（RAG 检索、库查询）常常十几秒
+# 不出 token，中间没有字节流过时反向代理和浏览器都可能把连接判死。
+HEARTBEAT_SECONDS = 15.0
+
+
+def _format_event(event: dict[str, Any]) -> str:
+    """把一条事件序列化成 SSE 文本块。"""
+    payload = json.dumps(event, ensure_ascii=False)
+    return f"event: {event['type']}\ndata: {payload}\n\n"
+
+
+async def _heartbeat(
+    source: AsyncIterator[dict[str, Any]],
+    interval: float = HEARTBEAT_SECONDS,
+) -> AsyncIterator[str]:
+    """把事件流格式化成 SSE 文本，静默超过 ``interval`` 秒就补一条注释心跳。
+
+    注释行（``: ping``）是 SSE 规范里的「忽略」语法，浏览器的 ``EventSource``
+    和前端自研解析器都不会把它当成事件，所以不会污染事件序列。
+
+    Args:
+        source: 业务层的事件生成器，产出纯 dict。
+        interval: 最长静默秒数。
+
+    Yields:
+        str: 可直接写进 ``text/event-stream`` 的文本块。
+    """
+    iterator = source.__aiter__()
+    pending = asyncio.ensure_future(anext(iterator))
+    try:
+        while True:
+            done, _ = await asyncio.wait({pending}, timeout=interval)
+            if not done:
+                yield ": ping\n\n"
+                continue
+            try:
+                event = pending.result()
+            except StopAsyncIteration:
+                break
+            yield _format_event(event)
+            pending = asyncio.ensure_future(anext(iterator))
+    finally:
+        # 客户端断开时 StreamingResponse 会取消这个生成器，
+        # 这里顺手把还在等的事件任务收掉，避免留下悬挂任务。
+        pending.cancel()
+        with contextlib.suppress(BaseException):
+            await pending
 
 
 # POST /api/ai/chat AI 对话（非流式）
@@ -51,9 +103,11 @@ async def chat(
 
 # POST /api/ai/chat/stream AI 对话（SSE 流式）
 # 请求体同 /api/ai/chat；响应为 text/event-stream
-# 事件：token（增量文本）/ tool_call（准备调用哪些工具）/ tool（工具执行结果）
-#      / booking_card（预约卡片，data.card 是可直接渲染的预约单）/ error / done
-# 说明：先初始化图与 Redis，失败直接返回 JSON 错误（503/502），不进入半截流
+# 事件：user_message（回显本轮输入）/ token（增量文本）/ tool_call（准备调用哪些工具）
+#      / tool（工具执行结果）/ booking_card（预约卡片，data.card 是可直接渲染的预约单）
+#      / error / done；每条事件带从 1 递增的 seq，便于前端校验有没有漏收
+# 说明：先初始化图与 Redis，失败直接返回 JSON 错误（503/502），不进入半截流；
+#      静默超过 HEARTBEAT_SECONDS 会插入 `: ping` 注释行，防止网关掐断长连接
 @router.post(
     "/chat/stream",
     summary="AI 对话（SSE 流式）",
@@ -73,18 +127,15 @@ async def chat_stream(
     except AiUpstreamError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
-    async def event_source():
-        async for event in service.stream_chat(
-            body.message,
-            user_id=current_user.id,
-            user_name=current_user.name,
-            session_id=body.session_id,
-        ):
-            payload = json.dumps(event, ensure_ascii=False)
-            yield f"event: {event['type']}\ndata: {payload}\n\n"
+    events = service.stream_chat(
+        body.message,
+        user_id=current_user.id,
+        user_name=current_user.name,
+        session_id=body.session_id,
+    )
 
     return StreamingResponse(
-        event_source(),
+        _heartbeat(events),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

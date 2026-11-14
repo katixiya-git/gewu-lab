@@ -80,9 +80,14 @@ class ChatReply(CamelModel):
 
 
 class ChatStreamEvent(CamelModel):
-    """SSE 事件：token / tool_call / tool / booking_card / error / done。"""
+    """SSE 事件：user_message / token / tool_call / tool / booking_card / error / done。
 
-    type: Literal["token", "tool_call", "tool", "booking_card", "error", "done"]
+    路由层是直接把 dict ``json.dumps`` 下发的，不走这个模型；它只用于说明
+    事件字段，免得前后端各自记一份。
+    """
+
+    type: Literal["user_message", "token", "tool_call", "tool", "booking_card", "error", "done"]
+    seq: int = Field(default=0, description="事件序号，从 1 递增；跳号说明中间有事件没收到")
     content: str | None = None
     names: list[str] = Field(default_factory=list)
     name: str | None = None

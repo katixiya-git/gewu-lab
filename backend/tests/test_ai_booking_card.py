@@ -88,7 +88,8 @@ async def test_stream_emits_booking_card_after_successful_tool(monkeypatch):
     assert cards[0]["card"]["conflict"] is True
     # 卡片是纯 dict，路由层才能直接 json.dumps
     assert isinstance(cards[0]["card"], dict)
-    assert events[-1] == {"type": "done"}
+    # 事件都带自增 seq，所以只断言类型，不整体比较 dict
+    assert events[-1]["type"] == "done"
 
 
 async def test_stream_skips_card_when_validation_failed(monkeypatch):

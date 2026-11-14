@@ -207,11 +207,35 @@ class AiService:
             session_id: 前端会话 id。
 
         Yields:
-            dict: ``token`` / ``tool_call`` / ``tool`` / ``booking_card`` /
-            ``error`` / ``done`` 事件。
+            dict: ``user_message`` / ``token`` / ``tool_call`` / ``tool`` /
+            ``booking_card`` / ``error`` / ``done`` 事件，每条都带从 1 递增的
+            ``seq``，前端据此判断有没有漏收事件。
         """
+        seq = 0
+        async for event in self._stream_events(
+            message,
+            user_id=user_id,
+            user_name=user_name,
+            session_id=session_id,
+        ):
+            seq += 1
+            yield {**event, "seq": seq}
+
+    async def _stream_events(
+        self,
+        message: str,
+        *,
+        user_id: int,
+        user_name: str,
+        session_id: str | None = None,
+    ) -> AsyncIterator[dict[str, Any]]:
+        """跑图并产出未编号的原始事件，编号工作交给 :meth:`stream_chat`。"""
         agent = await self._load_agent()
         thread_id = self.thread_id(user_id, session_id)
+
+        # 先把用户这条消息回显出去：前端的乐观渲染（发送即显示）据此确认
+        # 「这条已经进入服务端会话」，将来接多端时也能按流顺序对齐。
+        yield {"type": "user_message", "content": message}
 
         try:
             async for mode, payload in agent.astream(
@@ -250,5 +274,10 @@ class AiService:
             yield {"type": "error", "message": "模型调用超时或失败，请稍后重试"}
         except (RedisError, OSError):
             yield {"type": "error", "message": "会话存储不可用，请稍后再试"}
+        except Exception:  # noqa: BLE001 - 兜底：未预期异常也要让前端收到 error + done
+            # 注意不要在这里吞掉 CancelledError：它继承 BaseException，
+            # 所以客户端断开时这个 except 不会命中，取消仍能正常传播。
+            yield {"type": "error", "message": "对话中断，请稍后重试"}
 
+        # done 无条件收尾：前端只有收到它才认为本轮结束，不会一直停在「正在查询」
         yield {"type": "done"}
