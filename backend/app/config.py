@@ -66,7 +66,7 @@ class Settings(BaseSettings):
     kb_docs_dir: str = "docs/knowledge"
     kb_chunk_size: int = Field(default=500, ge=100, le=2000)
     kb_chunk_overlap: int = Field(default=80, ge=0, le=500)
-    kb_top_k: int = Field(default=5, ge=1, le=20)
+    kb_top_k: int = Field(default=5, ge=1, le=10)
     kb_min_similarity: float = Field(default=0.20, ge=0.0, le=1.0)
     kb_embedding_model: str = "text-embedding-v3"
     kb_embedding_dim: int = Field(default=1024, ge=64, le=4096)

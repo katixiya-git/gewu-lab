@@ -88,7 +88,7 @@ cd backend
 ```
 
 需要配置 `REDIS_URL`（指向 Redis Stack 的 0 号库，索引不能建在其它库）、`REDIS_PASSWORD`
-（无密码留空）与 `DASHSCOPE_API_KEY`。接口：
+（无密码留空）与 `AI_API_KEY`（百炼 Key）。接口：
 
 - `POST /api/knowledge/search`，body `{"query": "...", "topK": 3}`，返回
   `{docId, docTitle, section, content, similarity}` 列表（需登录）。
