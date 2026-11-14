@@ -4,11 +4,14 @@
 鉴权依赖从请求头 ``Authorization: Bearer <token>`` 取 JWT，换取当前用户。
 """
 
+from functools import lru_cache
+
 import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai.client import AiNotConfiguredError
 from app.core.security import decode_token
 from app.db import get_session
 from app.models import User
@@ -18,6 +21,7 @@ from app.services import (
     BookingService,
     DeviceService,
     FileService,
+    KnowledgeService,
     LabService,
     UserService,
 )
@@ -120,3 +124,23 @@ def get_booking_service(session: AsyncSession = Depends(get_session)) -> Booking
 def get_ai_service() -> AiService:
     """构造 AI 对话服务（不依赖数据库会话，无状态）。"""
     return AiService()
+
+
+@lru_cache
+def get_knowledge_service() -> KnowledgeService:
+    """进程内单例知识库检索服务。
+
+    服务本身无请求级状态，内部复用的 ``RedisKbStore`` 也是进程单例
+    （见 ``app.services.knowledge_service.get_kb_store``），避免每个请求
+    都新建 Redis 客户端与连接池。
+
+    Raises:
+        HTTPException 503: AI 未启用/未配置 Key，向量化无法进行。
+    """
+    try:
+        return KnowledgeService()
+    except AiNotConfiguredError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AI 未配置，暂时无法检索",
+        ) from exc

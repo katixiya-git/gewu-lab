@@ -26,6 +26,7 @@ from app.schemas.device import (
     DeviceUpdateRequest,
 )
 from app.schemas.file import FileOut
+from app.schemas.knowledge import KnowledgeHitOut, KnowledgeSearchRequest
 from app.schemas.lab import (
     LabCreateRequest,
     LabOut,
@@ -60,6 +61,8 @@ __all__ = [
     "DeviceStatusRequest",
     "DeviceUpdateRequest",
     "FileOut",
+    "KnowledgeHitOut",
+    "KnowledgeSearchRequest",
     "LabCreateRequest",
     "LabOut",
     "LabPageOut",
